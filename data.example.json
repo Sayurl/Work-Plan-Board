@@ -1,0 +1,61 @@
+{
+  "dashboards": [
+    {
+      "id": "main",
+      "name": "Task Board",
+      "today": {
+        "name": "Today",
+        "layoutGroup": "primary",
+        "taskIds": []
+      },
+      "columns": [
+        {
+          "id": "inbox",
+          "name": "Inbox",
+          "categoryTag": "#inbox",
+          "layoutGroup": "secondary",
+          "taskIds": []
+        },
+        {
+          "id": "this-week",
+          "name": "This Week",
+          "categoryTag": "#this-week",
+          "layoutGroup": "secondary",
+          "taskIds": []
+        },
+        {
+          "id": "deadline",
+          "name": "Deadline",
+          "categoryTag": "#deadline",
+          "layoutGroup": "primary",
+          "taskIds": []
+        },
+        {
+          "id": "prepare",
+          "name": "Prepare",
+          "categoryTag": "#prepare",
+          "layoutGroup": "secondary",
+          "taskIds": []
+        },
+        {
+          "id": "waiting",
+          "name": "Waiting",
+          "categoryTag": "#waiting",
+          "layoutGroup": "primary",
+          "taskIds": []
+        },
+        {
+          "id": "backlog",
+          "name": "Backlog",
+          "categoryTag": "#backlog",
+          "layoutGroup": "secondary",
+          "taskIds": []
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "completedTaskPolicy": "keep"
+  }
+}
+

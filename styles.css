@@ -1,0 +1,272 @@
+.ptb-view {
+  padding: 16px;
+}
+
+.ptb-toolbar,
+.ptb-column-header,
+.ptb-sidebar-header,
+.ptb-sidebar-actions,
+.ptb-focus-nav,
+.ptb-form-buttons,
+.ptb-card-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.ptb-toolbar {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.ptb-toolbar h2,
+.ptb-column-header h3,
+.ptb-sidebar-header h3 {
+  margin: 0;
+}
+
+.ptb-board-section {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.ptb-primary {
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+}
+
+.ptb-secondary {
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+}
+
+.ptb-column {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  min-height: 160px;
+  padding: 10px;
+}
+
+.ptb-today {
+  border-color: var(--interactive-accent);
+}
+
+.ptb-column-header {
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.ptb-count,
+.ptb-chip {
+  background: var(--background-modifier-border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 2px 7px;
+}
+
+.ptb-chip-due {
+  background: color-mix(in srgb, var(--interactive-accent) 18%, var(--background-modifier-border));
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+.ptb-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 80px;
+}
+
+.ptb-card {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.ptb-card.is-completed {
+  opacity: 0.62;
+}
+
+.ptb-card-top {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+}
+
+.ptb-card-title {
+  flex: 1;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.ptb-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.ptb-card-actions {
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ptb-toolbar button,
+.ptb-sidebar button,
+.ptb-form-buttons button {
+  font-size: 12px;
+}
+
+.ptb-card-actions button {
+  font-size: 11px;
+  line-height: 1.2;
+  min-height: 24px;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 2px 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ptb-source-button {
+  color: var(--text-accent);
+}
+
+.ptb-details {
+  margin-top: 8px;
+}
+
+.ptb-details p {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .ptb-primary,
+  .ptb-secondary {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ptb-sidebar {
+  padding: 12px;
+}
+
+.ptb-sidebar-header {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.ptb-focus-nav {
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.ptb-focus-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ptb-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ptb-form h4 {
+  margin: 0;
+}
+
+.ptb-form-sticky {
+  align-items: center;
+  background: var(--background-primary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  display: flex;
+  justify-content: space-between;
+  margin: -2px 0 2px;
+  padding: 2px 0 8px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.ptb-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ptb-form-row label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.ptb-checkbox-row {
+  align-items: center;
+  flex-direction: row;
+}
+
+.ptb-form-row input,
+.ptb-form-row select,
+.ptb-form-row textarea {
+  width: 100%;
+}
+
+.ptb-search-field {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+}
+
+.ptb-search-field input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ptb-search-field button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 8px;
+}
+
+.ptb-search-results {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  display: none;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.ptb-search-results.is-open {
+  display: block;
+}
+
+.ptb-search-option,
+.ptb-search-empty {
+  font-size: 12px;
+  overflow: hidden;
+  padding: 5px 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ptb-search-option {
+  cursor: pointer;
+}
+
+.ptb-search-option:hover {
+  background: var(--background-modifier-hover);
+}
+
+.ptb-search-empty {
+  color: var(--text-muted);
+}
+
+.ptb-form-row textarea {
+  min-height: 30px;
+  resize: none;
+}
