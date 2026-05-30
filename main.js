@@ -280,17 +280,17 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     this.renderViews();
   }
 
-  async reorderTaskList(list, taskId, targetId) {
+  async reorderTaskList(list, taskId, targetId, placement = "before") {
     const current = list.indexOf(taskId);
     if (current >= 0) list.splice(current, 1);
     const target = targetId ? list.indexOf(targetId) : -1;
-    if (target >= 0) list.splice(target, 0, taskId);
+    if (target >= 0) list.splice(placement === "after" ? target + 1 : target, 0, taskId);
     else list.push(taskId);
     await this.savePluginData();
     this.renderViews();
   }
 
-  async moveTaskToCategory(taskId, categoryId, targetId) {
+  async moveTaskToCategory(taskId, categoryId, targetId, placement = "before") {
     const task = this.getTask(taskId);
     if (!task || !this.getColumn(categoryId)) return;
 
@@ -301,7 +301,7 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     const targetColumn = this.dashboard.columns.find((column) => column.id === categoryId);
     if (targetColumn) {
       const target = targetId ? targetColumn.taskIds.indexOf(targetId) : -1;
-      if (target >= 0) targetColumn.taskIds.splice(target, 0, taskId);
+      if (target >= 0) targetColumn.taskIds.splice(placement === "after" ? target + 1 : target, 0, taskId);
       else targetColumn.taskIds.push(taskId);
     }
 
@@ -458,17 +458,42 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     await this.updateColumns(columns);
   }
 
-  async moveColumnTo(columnId, targetId, layoutGroup) {
+  async moveColumnTo(columnId, targetId, layoutGroup, placement = "before") {
     if (columnId === targetId) return;
     const columns = this.dashboard.columns.slice();
     const index = columns.findIndex((column) => column.id === columnId);
     if (index < 0) return;
+    placement = this.normalizeColumnPlacement(columns, columnId, targetId, placement);
     const [column] = columns.splice(index, 1);
     column.layoutGroup = layoutGroup === "primary" ? "primary" : "secondary";
     const target = targetId ? columns.findIndex((item) => item.id === targetId) : -1;
-    if (target >= 0) columns.splice(target, 0, column);
+    if (target >= 0) columns.splice(placement === "after" ? target + 1 : target, 0, column);
     else columns.push(column);
     await this.updateColumns(columns);
+  }
+
+  normalizeColumnPlacement(columns, columnId, targetId, placement) {
+    if (!targetId) return placement;
+    const sourceIndex = columns.findIndex((column) => column.id === columnId);
+    const targetIndex = columns.findIndex((column) => column.id === targetId);
+    if (sourceIndex < 0 || targetIndex < 0) return placement;
+    if (sourceIndex < targetIndex && placement === "before") return "after";
+    if (sourceIndex > targetIndex && placement === "after") return "before";
+    return placement;
+  }
+
+  async moveColumnToGroupEnd(columnId, layoutGroup) {
+    const normalizedGroup = layoutGroup === "primary" ? "primary" : "secondary";
+    const groupColumns = this.dashboard.columns.filter((column) => (column.layoutGroup === "primary" ? "primary" : "secondary") === normalizedGroup && column.id !== columnId);
+    const lastColumn = groupColumns[groupColumns.length - 1];
+    if (lastColumn) await this.moveColumnTo(columnId, lastColumn.id, normalizedGroup, "after");
+    else {
+      const columns = this.dashboard.columns.slice();
+      const column = columns.find((item) => item.id === columnId);
+      if (!column) return;
+      column.layoutGroup = normalizedGroup;
+      await this.updateColumns(columns);
+    }
   }
 
   async updateColumnLayout(columnId, layoutGroup) {
@@ -639,9 +664,9 @@ class BoardView extends ItemView {
     header.createSpan({ text: String(this.plugin.getTodayTasks().length), cls: "ptb-count" });
     const list = columnEl.createDiv("ptb-card-list");
     list.dataset.list = "today";
-    makeDropZone(list, async (taskId, targetId) => {
+    makeDropZone(list, async (taskId, targetId, placement) => {
       await this.plugin.addToToday(taskId);
-      await this.plugin.reorderTaskList(this.plugin.dashboard.today.taskIds, taskId, targetId);
+      await this.plugin.reorderTaskList(this.plugin.dashboard.today.taskIds, taskId, targetId, placement);
     });
     for (const task of this.plugin.getTodayTasks()) {
       list.appendChild(renderTaskCard(this.plugin, task, { inToday: true }));
@@ -688,13 +713,13 @@ class BoardView extends ItemView {
     this.makeColumnTarget(columnEl, column);
     const list = columnEl.createDiv("ptb-card-list");
     list.dataset.column = column.id;
-    makeDropZone(list, async (taskId, targetId) => {
+    makeDropZone(list, async (taskId, targetId, placement) => {
       const task = this.plugin.getTask(taskId);
       if (!task) return;
       if (task.category === column.id) {
-        await this.plugin.reorderTaskList(column.taskIds, taskId, targetId);
+        await this.plugin.reorderTaskList(column.taskIds, taskId, targetId, placement);
       } else {
-        await this.plugin.moveTaskToCategory(taskId, column.id, targetId);
+        await this.plugin.moveTaskToCategory(taskId, column.id, targetId, placement);
       }
     });
     for (const task of tasks) {
@@ -706,6 +731,7 @@ class BoardView extends ItemView {
     section.ondragover = (event) => {
       if (!hasDragType(event.dataTransfer, "application/x-work-plan-column")) return;
       event.preventDefault();
+      this.updateColumnDropFromSection(section, event);
       section.addClass("is-column-drop-target");
     };
     section.ondragleave = (event) => {
@@ -716,9 +742,85 @@ class BoardView extends ItemView {
       const columnId = event.dataTransfer.getData("application/x-work-plan-column");
       if (!columnId) return;
       event.preventDefault();
+      const target = this.getColumnDropTargetFromSection(section, event, columnId);
       section.removeClass("is-column-drop-target");
-      await this.plugin.moveColumnTo(columnId, null, layoutGroup);
+      if (target) await this.plugin.moveColumnTo(columnId, target.columnId, layoutGroup, target.placement);
+      else await this.plugin.moveColumnToGroupEnd(columnId, layoutGroup);
     };
+  }
+
+  updateColumnDropFromSection(section, event) {
+    const draggedId = event.dataTransfer.getData("application/x-work-plan-column");
+    const target = this.getColumnDropTargetFromSection(section, event, draggedId);
+    this.clearColumnDropIndicators();
+    if (!target) return;
+    const targetEl = [...section.querySelectorAll(".ptb-column[data-column-id]")].find((el) => el.dataset.columnId === target.columnId);
+    if (targetEl) targetEl.addClass(target.placement === "after" ? "is-column-drop-after" : "is-column-drop-before");
+  }
+
+  getColumnDropTargetFromSection(section, event, draggedId) {
+    const allColumns = [...section.querySelectorAll(".ptb-column[data-column-id]")];
+    const columns = allColumns.filter((el) => el.dataset.columnId !== draggedId);
+    if (columns.length === 0) return null;
+    const pointerX = event.clientX;
+    const pointerY = event.clientY;
+    const rowTolerance = 36;
+    const sameRowAllColumns = allColumns.filter((columnEl) => {
+      const rect = columnEl.getBoundingClientRect();
+      return pointerY >= rect.top - rowTolerance && pointerY <= rect.bottom + rowTolerance;
+    });
+    const gapColumns = sameRowAllColumns.length > 0 ? sameRowAllColumns : allColumns;
+    const sortedByLeft = gapColumns
+      .map((columnEl) => ({ columnEl, rect: columnEl.getBoundingClientRect() }))
+      .sort((a, b) => a.rect.left - b.rect.left);
+    for (let index = 0; index < sortedByLeft.length - 1; index += 1) {
+      const left = sortedByLeft[index];
+      const right = sortedByLeft[index + 1];
+      if (pointerX >= left.rect.right && pointerX <= right.rect.left) {
+        return this.getColumnGapTarget(left, right, draggedId);
+      }
+    }
+    const sameRowColumns = columns.filter((columnEl) => {
+      const rect = columnEl.getBoundingClientRect();
+      return pointerY >= rect.top - rowTolerance && pointerY <= rect.bottom + rowTolerance;
+    });
+    const candidates = sameRowColumns.length > 0 ? sameRowColumns : columns;
+    let nearest = null;
+    const rightmost = candidates.reduce((right, columnEl) => {
+      const rect = columnEl.getBoundingClientRect();
+      return !right || rect.right > right.rect.right ? { columnEl, rect } : right;
+    }, null);
+    if (rightmost && pointerX > rightmost.rect.right) {
+      return { columnId: rightmost.columnEl.dataset.columnId, placement: "after" };
+    }
+    const leftmost = candidates.reduce((left, columnEl) => {
+      const rect = columnEl.getBoundingClientRect();
+      return !left || rect.left < left.rect.left ? { columnEl, rect } : left;
+    }, null);
+    if (leftmost && pointerX < leftmost.rect.left) {
+      return { columnId: leftmost.columnEl.dataset.columnId, placement: "before" };
+    }
+    for (const columnEl of candidates) {
+      const rect = columnEl.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const distance = Math.hypot(pointerX - centerX, pointerY - centerY);
+      if (!nearest || distance < nearest.distance) {
+        nearest = { columnEl, rect, distance };
+      }
+    }
+    const placement = pointerX > nearest.rect.left + nearest.rect.width / 2 ? "after" : "before";
+    return { columnId: nearest.columnEl.dataset.columnId, placement };
+  }
+
+  getColumnGapTarget(left, right, draggedId) {
+    if (left.columnEl.dataset.columnId === draggedId) {
+      return { columnId: right.columnEl.dataset.columnId, placement: "after" };
+    }
+    if (right.columnEl.dataset.columnId === draggedId) {
+      return { columnId: left.columnEl.dataset.columnId, placement: "before" };
+    }
+    return { columnId: left.columnEl.dataset.columnId, placement: "after" };
   }
 
   makeColumnTarget(columnEl, column) {
@@ -728,21 +830,23 @@ class BoardView extends ItemView {
       if (!draggedId || draggedId === column.id) return;
       event.preventDefault();
       this.clearColumnDropIndicators();
-      columnEl.addClass("is-column-drop-before");
+      columnEl.addClass(getHorizontalPlacement(event, columnEl) === "after" ? "is-column-drop-after" : "is-column-drop-before");
     };
     columnEl.ondrop = async (event) => {
       const draggedId = event.dataTransfer.getData("application/x-work-plan-column");
       if (!draggedId || draggedId === column.id) return;
       event.preventDefault();
       event.stopPropagation();
+      const placement = getHorizontalPlacement(event, columnEl);
       this.clearColumnDropIndicators();
-      await this.plugin.moveColumnTo(draggedId, column.id, column.layoutGroup);
+      await this.plugin.moveColumnTo(draggedId, column.id, column.layoutGroup, placement);
     };
   }
 
   clearColumnDropIndicators() {
-    for (const el of this.containerEl.querySelectorAll(".is-column-drop-before, .is-column-drop-target")) {
+    for (const el of this.containerEl.querySelectorAll(".is-column-drop-before, .is-column-drop-after, .is-column-drop-target")) {
       el.removeClass("is-column-drop-before");
+      el.removeClass("is-column-drop-after");
       el.removeClass("is-column-drop-target");
     }
   }
@@ -1110,13 +1214,26 @@ function renderTaskCard(plugin, task, options = {}) {
     event.dataTransfer.setData("text/plain", task.id);
     event.dataTransfer.effectAllowed = "move";
   };
-  card.ondragover = (event) => event.preventDefault();
+  card.ondragend = () => clearTaskDropIndicators(document);
+  card.ondragover = (event) => {
+    if (!hasTaskDrag(event.dataTransfer)) return;
+    event.preventDefault();
+    clearTaskDropIndicators(card.ownerDocument);
+    card.addClass(getVerticalPlacement(event, card) === "after" ? "is-task-drop-after" : "is-task-drop-before");
+  };
+  card.ondragleave = (event) => {
+    if (card.contains(event.relatedTarget)) return;
+    card.removeClass("is-task-drop-before");
+    card.removeClass("is-task-drop-after");
+  };
   card.ondrop = (event) => {
     event.preventDefault();
     event.stopPropagation();
     const droppedId = event.dataTransfer.getData("text/plain");
+    const placement = getVerticalPlacement(event, card);
+    clearTaskDropIndicators(card.ownerDocument);
     const list = card.parentElement;
-    if (list) list.dispatchEvent(new CustomEvent("ptb-drop-task", { detail: { taskId: droppedId, targetId: task.id } }));
+    if (list) list.dispatchEvent(new CustomEvent("ptb-drop-task", { detail: { taskId: droppedId, targetId: task.id, placement } }));
   };
   card.onclick = (event) => {
     if (event.target.closest("button") || event.target.closest("a") || event.target.closest("summary")) return;
@@ -1192,19 +1309,51 @@ function renderTaskCard(plugin, task, options = {}) {
 }
 
 function makeDropZone(el, onDrop) {
-  el.ondragover = (event) => event.preventDefault();
+  el.ondragover = (event) => {
+    if (!hasTaskDrag(event.dataTransfer)) return;
+    event.preventDefault();
+    el.addClass("is-task-drop-empty");
+  };
+  el.ondragleave = (event) => {
+    if (el.contains(event.relatedTarget)) return;
+    el.removeClass("is-task-drop-empty");
+  };
   el.ondrop = async (event) => {
     event.preventDefault();
+    el.removeClass("is-task-drop-empty");
+    clearTaskDropIndicators(el.ownerDocument);
     const taskId = event.dataTransfer.getData("text/plain");
     if (taskId) await onDrop(taskId, null);
   };
   el.addEventListener("ptb-drop-task", async (event) => {
-    await onDrop(event.detail.taskId, event.detail.targetId);
+    await onDrop(event.detail.taskId, event.detail.targetId, event.detail.placement || "before");
   });
 }
 
 function hasDragType(dataTransfer, type) {
   return Array.from(dataTransfer.types || []).includes(type);
+}
+
+function hasTaskDrag(dataTransfer) {
+  return hasDragType(dataTransfer, "text/plain") && !hasDragType(dataTransfer, "application/x-work-plan-column");
+}
+
+function getVerticalPlacement(event, el) {
+  const rect = el.getBoundingClientRect();
+  return event.clientY > rect.top + rect.height / 2 ? "after" : "before";
+}
+
+function getHorizontalPlacement(event, el) {
+  const rect = el.getBoundingClientRect();
+  return event.clientX > rect.left + rect.width / 2 ? "after" : "before";
+}
+
+function clearTaskDropIndicators(root) {
+  for (const el of root.querySelectorAll(".is-task-drop-before, .is-task-drop-after, .is-task-drop-empty")) {
+    el.removeClass("is-task-drop-before");
+    el.removeClass("is-task-drop-after");
+    el.removeClass("is-task-drop-empty");
+  }
 }
 
 function renderTaskForm(plugin, task) {
