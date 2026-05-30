@@ -45,8 +45,24 @@
 .ptb-column {
   border: 1px solid var(--background-modifier-border);
   border-radius: 8px;
+  position: relative;
   min-height: 160px;
   padding: 10px;
+}
+
+.ptb-column.is-dragging {
+  opacity: 0.62;
+}
+
+.ptb-column.is-column-drop-before::before {
+  background: var(--interactive-accent);
+  border-radius: 999px;
+  bottom: 8px;
+  content: "";
+  left: -7px;
+  position: absolute;
+  top: 8px;
+  width: 3px;
 }
 
 .ptb-today {
@@ -62,6 +78,18 @@
 .ptb-column-controls {
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.ptb-column-drag-handle {
+  color: var(--text-muted);
+  cursor: grab;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 3px;
+}
+
+.ptb-column-drag-handle:active {
+  cursor: grabbing;
 }
 
 .ptb-column-controls {
@@ -94,6 +122,11 @@
   flex-direction: column;
   gap: 8px;
   min-height: 80px;
+}
+
+.ptb-board-section.is-column-drop-target {
+  outline: 1px dashed var(--interactive-accent);
+  outline-offset: 3px;
 }
 
 .ptb-column-editor {

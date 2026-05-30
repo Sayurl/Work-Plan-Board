@@ -458,6 +458,19 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     await this.updateColumns(columns);
   }
 
+  async moveColumnTo(columnId, targetId, layoutGroup) {
+    if (columnId === targetId) return;
+    const columns = this.dashboard.columns.slice();
+    const index = columns.findIndex((column) => column.id === columnId);
+    if (index < 0) return;
+    const [column] = columns.splice(index, 1);
+    column.layoutGroup = layoutGroup === "primary" ? "primary" : "secondary";
+    const target = targetId ? columns.findIndex((item) => item.id === targetId) : -1;
+    if (target >= 0) columns.splice(target, 0, column);
+    else columns.push(column);
+    await this.updateColumns(columns);
+  }
+
   async updateColumnLayout(columnId, layoutGroup) {
     const column = this.getColumn(columnId);
     if (!column) return;
@@ -606,12 +619,14 @@ class BoardView extends ItemView {
     };
 
     const primary = container.createDiv("ptb-board-section ptb-primary");
+    this.makeColumnDropZone(primary, "primary");
     this.renderToday(primary);
     for (const column of this.plugin.dashboard.columns.filter((item) => item.layoutGroup === "primary")) {
       this.renderColumn(primary, column);
     }
 
     const secondary = container.createDiv("ptb-board-section ptb-secondary");
+    this.makeColumnDropZone(secondary, "secondary");
     for (const column of this.plugin.dashboard.columns.filter((item) => item.layoutGroup !== "primary")) {
       this.renderColumn(secondary, column);
     }
@@ -636,8 +651,21 @@ class BoardView extends ItemView {
   renderColumn(parent, column) {
     const tasks = this.plugin.getTasksForColumn(column.id);
     const columnEl = parent.createDiv("ptb-column");
+    columnEl.dataset.columnId = column.id;
     const header = columnEl.createDiv("ptb-column-header");
     const title = header.createDiv("ptb-column-title");
+    const dragHandle = title.createSpan({ text: "⋮⋮", cls: "ptb-column-drag-handle" });
+    dragHandle.draggable = true;
+    dragHandle.setAttribute("aria-label", `Drag ${column.name} column`);
+    dragHandle.ondragstart = (event) => {
+      event.dataTransfer.setData("application/x-work-plan-column", column.id);
+      event.dataTransfer.effectAllowed = "move";
+      columnEl.addClass("is-dragging");
+    };
+    dragHandle.ondragend = () => {
+      columnEl.removeClass("is-dragging");
+      this.clearColumnDropIndicators();
+    };
     title.createEl("h3", { text: column.name });
     title.createSpan({ text: String(tasks.length), cls: "ptb-count" });
     const controls = header.createDiv("ptb-column-controls");
@@ -657,6 +685,7 @@ class BoardView extends ItemView {
     controls.createEl("button", { text: "Edit" }).onclick = () => {
       this.renderColumnEditor(columnEl, column);
     };
+    this.makeColumnTarget(columnEl, column);
     const list = columnEl.createDiv("ptb-card-list");
     list.dataset.column = column.id;
     makeDropZone(list, async (taskId, targetId) => {
@@ -670,6 +699,51 @@ class BoardView extends ItemView {
     });
     for (const task of tasks) {
       list.appendChild(renderTaskCard(this.plugin, task, { inToday: this.plugin.dashboard.today.taskIds.includes(task.id) }));
+    }
+  }
+
+  makeColumnDropZone(section, layoutGroup) {
+    section.ondragover = (event) => {
+      if (!hasDragType(event.dataTransfer, "application/x-work-plan-column")) return;
+      event.preventDefault();
+      section.addClass("is-column-drop-target");
+    };
+    section.ondragleave = (event) => {
+      if (section.contains(event.relatedTarget)) return;
+      section.removeClass("is-column-drop-target");
+    };
+    section.ondrop = async (event) => {
+      const columnId = event.dataTransfer.getData("application/x-work-plan-column");
+      if (!columnId) return;
+      event.preventDefault();
+      section.removeClass("is-column-drop-target");
+      await this.plugin.moveColumnTo(columnId, null, layoutGroup);
+    };
+  }
+
+  makeColumnTarget(columnEl, column) {
+    columnEl.ondragover = (event) => {
+      if (!hasDragType(event.dataTransfer, "application/x-work-plan-column")) return;
+      const draggedId = event.dataTransfer.getData("application/x-work-plan-column");
+      if (!draggedId || draggedId === column.id) return;
+      event.preventDefault();
+      this.clearColumnDropIndicators();
+      columnEl.addClass("is-column-drop-before");
+    };
+    columnEl.ondrop = async (event) => {
+      const draggedId = event.dataTransfer.getData("application/x-work-plan-column");
+      if (!draggedId || draggedId === column.id) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.clearColumnDropIndicators();
+      await this.plugin.moveColumnTo(draggedId, column.id, column.layoutGroup);
+    };
+  }
+
+  clearColumnDropIndicators() {
+    for (const el of this.containerEl.querySelectorAll(".is-column-drop-before, .is-column-drop-target")) {
+      el.removeClass("is-column-drop-before");
+      el.removeClass("is-column-drop-target");
     }
   }
 
@@ -1127,6 +1201,10 @@ function makeDropZone(el, onDrop) {
   el.addEventListener("ptb-drop-task", async (event) => {
     await onDrop(event.detail.taskId, event.detail.targetId);
   });
+}
+
+function hasDragType(dataTransfer, type) {
+  return Array.from(dataTransfer.types || []).includes(type);
 }
 
 function renderTaskForm(plugin, task) {
