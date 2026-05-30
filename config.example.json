@@ -1,0 +1,47 @@
+{
+  "configVersion": 1,
+  "dashboards": [
+    {
+      "id": "main",
+      "name": "Task Board",
+      "today": {
+        "name": "Today",
+        "layoutGroup": "primary"
+      },
+      "columns": [
+        {
+          "id": "high-priority",
+          "name": "High Priority",
+          "categoryTag": "#high-priority",
+          "layoutGroup": "primary"
+        },
+        {
+          "id": "deadline",
+          "name": "Deadline",
+          "categoryTag": "#deadline",
+          "layoutGroup": "primary"
+        },
+        {
+          "id": "prepare",
+          "name": "Prepare",
+          "categoryTag": "#prepare",
+          "layoutGroup": "secondary"
+        },
+        {
+          "id": "inbox",
+          "name": "Inbox",
+          "categoryTag": "#inbox",
+          "layoutGroup": "secondary"
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "completedTaskPolicy": "keep"
+  },
+  "timelineSettings": {
+    "startTime": "09:00",
+    "endTime": "18:00",
+    "slotMinutes": 90
+  }
+}

@@ -1,0 +1,417 @@
+const { Notice, Plugin, TFile, TFolder } = require("obsidian");
+const { BOARD_VIEW, SIDEBAR_VIEW } = require("./core/constants");
+const { DEFAULT_CONFIG } = require("./core/defaults");
+const { loadConfig, saveConfig } = require("./core/config");
+const { hydrateDashboard, normalizeData, syncConfigDataFromDashboard } = require("./core/data");
+const { reconcileDashboard } = require("./core/reconcile");
+const { normalizeColumns } = require("./columns/column-model");
+const { moveColumnInList, moveColumnToGroupEnd: moveColumnToGroupEndInList, moveColumnToTarget } = require("./columns/column-service");
+const { TaskBoardSettingTab } = require("./settings/setting-tab");
+const { appendTask, processCompletedTasks, reconcileInvalidTaskCategories, scanTasks, writeTask } = require("./tasks/task-repository");
+const { addTaskToToday, removeTaskFromToday, reorderTaskList: reorderTaskIds } = require("./today/today-service");
+const { BoardView } = require("./views/workboard-view");
+const { SidebarView } = require("./views/sidebar-view");
+const { clean, makeColumnId, makeTaskId, normalizeTag } = require("./utils/text");
+const { getProjectRoot, normalizeSourceInput, parseWikiTarget } = require("./utils/source-links");
+
+module.exports = class ProjectTaskBoardPlugin extends Plugin {
+  async onload() {
+    const legacyData = await this.loadData();
+    this.config = await loadConfig(this, legacyData);
+    this.data = normalizeData(legacyData, this.config);
+    this.board = hydrateDashboard(this.config, this.data);
+    this.tasks = [];
+    this.tasksById = new Map();
+    this.selectedTaskId = this.data.selectedTaskId || null;
+    this.refreshPromise = null;
+
+    await this.savePluginData();
+
+    this.registerView(BOARD_VIEW, (leaf) => new BoardView(leaf, this));
+    this.registerView(SIDEBAR_VIEW, (leaf) => new SidebarView(leaf, this));
+
+    this.addRibbonIcon("layout-dashboard", "Open project task board", () => this.openBoard());
+    this.addCommand({
+      id: "open-project-task-board",
+      name: "Open project task board",
+      callback: () => this.openBoard()
+    });
+    this.addCommand({
+      id: "open-project-task-sidebar",
+      name: "Open project task sidebar",
+      callback: () => this.openSidebar()
+    });
+    this.addSettingTab(new TaskBoardSettingTab(this.app, this));
+
+    this.app.workspace.onLayoutReady(() => {
+      this.refreshTasks();
+    });
+  }
+
+  async onunload() {
+    this.app.workspace.detachLeavesOfType(BOARD_VIEW);
+    this.app.workspace.detachLeavesOfType(SIDEBAR_VIEW);
+  }
+
+  get dashboard() {
+    return this.board;
+  }
+
+  async savePluginData() {
+    this.data.selectedTaskId = this.selectedTaskId || "";
+    syncConfigDataFromDashboard(this.config, this.data, this.board);
+    await saveConfig(this, this.config);
+    await this.saveData(this.data);
+  }
+
+  async openBoard() {
+    let leaf = this.app.workspace.getLeavesOfType(BOARD_VIEW)[0];
+    if (!leaf) {
+      leaf = this.app.workspace.getLeaf(true);
+      await leaf.setViewState({ type: BOARD_VIEW, active: true });
+    }
+    await this.openSidebar();
+    this.app.workspace.revealLeaf(leaf);
+  }
+
+  async openSidebar() {
+    let leaf = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW)[0];
+    if (!leaf) {
+      leaf = this.app.workspace.getRightLeaf(false);
+      await leaf.setViewState({ type: SIDEBAR_VIEW, active: true });
+    }
+    this.app.workspace.revealLeaf(leaf);
+  }
+
+  async refreshTasks() {
+    if (this.refreshPromise) return this.refreshPromise;
+    this.refreshPromise = (async () => {
+      await processCompletedTasks(this.app, this.dashboard.columns, this.config.settings.completedTaskPolicy || "keep");
+      await reconcileInvalidTaskCategories(this.app, this.dashboard.columns);
+      const parsed = await scanTasks(this.app, this.dashboard.columns);
+      this.tasks = parsed.tasks;
+      this.tasksById = new Map(this.tasks.map((task) => [task.id, task]));
+      reconcileDashboard(this.dashboard, this.tasks);
+      await this.savePluginData();
+      this.renderViews();
+    })();
+    try {
+      await this.refreshPromise;
+    } finally {
+      this.refreshPromise = null;
+    }
+  }
+
+  renderViews() {
+    for (const leaf of this.app.workspace.getLeavesOfType(BOARD_VIEW)) {
+      leaf.view.render();
+    }
+    for (const leaf of this.app.workspace.getLeavesOfType(SIDEBAR_VIEW)) {
+      leaf.view.render();
+    }
+  }
+
+  selectTask(taskId) {
+    this.selectedTaskId = taskId;
+    this.savePluginData().catch((error) => console.error("Failed to save selected task", error));
+    this.openSidebar();
+    this.renderViews();
+  }
+
+  getTask(taskId) {
+    return this.tasksById.get(taskId);
+  }
+
+  getTasksForColumn(columnId) {
+    const column = this.dashboard.columns.find((item) => item.id === columnId);
+    if (!column) return [];
+    return column.taskIds.map((id) => this.getTask(id)).filter(Boolean);
+  }
+
+  getTodayTasks() {
+    return this.dashboard.today.taskIds.map((id) => this.getTask(id)).filter(Boolean);
+  }
+
+  async addToToday(taskId) {
+    if (!this.tasksById.has(taskId)) return;
+    if (!this.dashboard.today.taskIds.includes(taskId)) {
+      addTaskToToday(this.dashboard.today, taskId);
+      await this.savePluginData();
+      this.renderViews();
+    }
+  }
+
+  async removeFromToday(taskId) {
+    removeTaskFromToday(this.dashboard.today, taskId);
+    await this.savePluginData();
+    this.renderViews();
+  }
+
+  async reorderTaskList(list, taskId, targetId, placement = "before") {
+    reorderTaskIds(list, taskId, targetId, placement);
+    await this.savePluginData();
+    this.renderViews();
+  }
+
+  async moveTaskToCategory(taskId, categoryId, targetId, placement = "before") {
+    const task = this.getTask(taskId);
+    if (!task || !this.getColumn(categoryId)) return;
+
+    for (const column of this.dashboard.columns) {
+      column.taskIds = column.taskIds.filter((id) => id !== taskId);
+    }
+
+    const targetColumn = this.dashboard.columns.find((column) => column.id === categoryId);
+    if (targetColumn) {
+      const target = targetId ? targetColumn.taskIds.indexOf(targetId) : -1;
+      if (target >= 0) targetColumn.taskIds.splice(placement === "after" ? target + 1 : target, 0, taskId);
+      else targetColumn.taskIds.push(taskId);
+    }
+
+    task.category = categoryId;
+    await this.writeTask(task);
+    await this.savePluginData();
+    this.renderViews();
+  }
+
+  async completeTask(taskId, completed) {
+    const task = this.getTask(taskId);
+    if (!task) return;
+    task.completed = completed;
+    await this.writeTask(task);
+    this.renderViews();
+  }
+
+  async createTask(input) {
+    const task = {
+      id: makeTaskId(),
+      title: input.title.trim(),
+      completed: false,
+      category: input.category || "inbox",
+      project: clean(input.project),
+      dueDate: clean(input.dueDate),
+      estimate: clean(input.estimate),
+      source: clean(input.source),
+      nextAction: clean(input.nextAction),
+      waitingFor: clean(input.waitingFor),
+      followUpDate: clean(input.followUpDate),
+      goal: clean(input.goal),
+      comment: clean(input.comment),
+      filePath: await this.resolveTaskFilePath(input)
+    };
+
+    if (!task.title || !this.getColumn(task.category)) {
+      new Notice("Task title and category are required.");
+      return null;
+    }
+
+    await this.appendTask(task);
+    const column = this.dashboard.columns.find((item) => item.id === task.category);
+    if (column && !column.taskIds.includes(task.id)) column.taskIds.push(task.id);
+    await this.savePluginData();
+    await this.refreshTasks();
+    return task;
+  }
+
+  async updateTask(taskId, input) {
+    const task = this.getTask(taskId);
+    if (!task) return;
+    const oldCategory = task.category;
+
+    task.title = input.title.trim();
+    task.category = input.category;
+    task.project = clean(input.project);
+    task.dueDate = clean(input.dueDate);
+    task.estimate = clean(input.estimate);
+    task.source = clean(input.source);
+    task.nextAction = clean(input.nextAction);
+    task.waitingFor = clean(input.waitingFor);
+    task.followUpDate = clean(input.followUpDate);
+    task.goal = clean(input.goal);
+    task.comment = clean(input.comment);
+
+    if (!task.title || !this.getColumn(task.category)) {
+      new Notice("Task title and category are required.");
+      return;
+    }
+
+    await this.writeTask(task);
+    if (oldCategory !== task.category) {
+      for (const column of this.dashboard.columns) {
+        column.taskIds = column.taskIds.filter((id) => id !== task.id);
+      }
+      const column = this.dashboard.columns.find((item) => item.id === task.category);
+      if (column) column.taskIds.push(task.id);
+      await this.savePluginData();
+    }
+    await this.refreshTasks();
+  }
+
+  async resolveTaskFilePath(input) {
+    const selectedFolder = clean(input.project);
+    if (selectedFolder) return `${selectedFolder}/_Tasks.md`;
+    const active = this.app.workspace.getActiveFile();
+    if (input.useSource && active) {
+      const projectRoot = getProjectRoot(active.path);
+      if (projectRoot) return `${projectRoot}/_Tasks.md`;
+    }
+    return "_Tasks.md";
+  }
+
+  getActiveSourceLink() {
+    const active = this.app.workspace.getActiveFile();
+    if (!active) return "";
+    const pathWithoutExt = active.path.replace(/\.md$/i, "");
+    return pathWithoutExt;
+  }
+
+  getFolderOptions() {
+    return this.app.vault
+      .getAllLoadedFiles()
+      .filter((item) => item instanceof TFolder)
+      .map((folder) => folder.path)
+      .filter((path) => path && !path.startsWith(".obsidian"))
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  getSourceOptions() {
+    return this.app.vault
+      .getMarkdownFiles()
+      .filter((file) => !file.path.startsWith(".obsidian/"))
+      .map((file) => file.path.replace(/\.md$/i, ""))
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  getColumn(columnId) {
+    return this.dashboard.columns.find((column) => column.id === columnId);
+  }
+
+  getColumnOptions(excludeId = "") {
+    return this.dashboard.columns
+      .filter((column) => column.id !== excludeId)
+      .map((column) => ({ id: column.id, name: column.name }));
+  }
+
+  async updateColumns(columns) {
+    this.dashboard.columns = normalizeColumns(columns);
+    await this.savePluginData();
+    await this.refreshTasks();
+  }
+
+  async addColumnFromBoard(layoutGroup = "secondary") {
+    const columns = this.dashboard.columns.slice();
+    const baseName = "New Column";
+    const id = makeColumnId(baseName, columns);
+    columns.push({
+      id,
+      name: baseName,
+      categoryTag: `#${id}`,
+      layoutGroup,
+      taskIds: []
+    });
+    await this.updateColumns(columns);
+  }
+
+  async moveColumn(columnId, direction) {
+    await this.updateColumns(moveColumnInList(this.dashboard.columns, columnId, direction));
+  }
+
+  async moveColumnTo(columnId, targetId, layoutGroup, placement = "before") {
+    await this.updateColumns(moveColumnToTarget(this.dashboard.columns, columnId, targetId, layoutGroup, placement));
+  }
+
+  async moveColumnToGroupEnd(columnId, layoutGroup) {
+    await this.updateColumns(moveColumnToGroupEndInList(this.dashboard.columns, columnId, layoutGroup));
+  }
+
+  async updateColumnLayout(columnId, layoutGroup) {
+    const column = this.getColumn(columnId);
+    if (!column) return;
+    column.layoutGroup = layoutGroup === "primary" ? "primary" : "secondary";
+    await this.updateColumns(this.dashboard.columns);
+  }
+
+  async renameColumn(columnId, name) {
+    const column = this.getColumn(columnId);
+    if (!column) return;
+    column.name = clean(name) || column.name;
+    await this.updateColumns(this.dashboard.columns);
+  }
+
+  async updateColumnTag(columnId, categoryTag) {
+    const column = this.getColumn(columnId);
+    if (!column) return;
+    column.categoryTag = normalizeTag(categoryTag) || column.categoryTag;
+    this.dashboard.columns = normalizeColumns(this.dashboard.columns);
+    const tasks = this.tasks.filter((task) => task.category === columnId);
+    for (const task of tasks) {
+      await this.writeTask(task);
+    }
+    await this.savePluginData();
+    await this.refreshTasks();
+  }
+
+  async resetColumnsToDefault() {
+    const defaultColumns = normalizeColumns(DEFAULT_CONFIG.dashboards[0].columns);
+    const defaultIds = new Set(defaultColumns.map((column) => column.id));
+    const defaultInbox = defaultColumns.find((column) => column.id === "inbox") || defaultColumns[0];
+    const tasksToMove = this.tasks.filter((task) => !defaultIds.has(task.category));
+    this.dashboard.columns = defaultColumns;
+    for (const task of tasksToMove) {
+      task.category = defaultInbox.id;
+      await this.writeTask(task);
+    }
+    await this.savePluginData();
+    await this.refreshTasks();
+  }
+
+  async migrateColumnTasks(sourceId, targetId) {
+    if (sourceId === targetId) return;
+    const source = this.getColumn(sourceId);
+    const target = this.getColumn(targetId);
+    if (!source || !target) return;
+    const tasks = this.tasks.filter((task) => task.category === sourceId);
+    for (const task of tasks) {
+      task.category = targetId;
+      await this.writeTask(task);
+    }
+  }
+
+  async deleteColumn(sourceId, targetId) {
+    if (this.dashboard.columns.length <= 1) {
+      new Notice("At least one column is required.");
+      return;
+    }
+    await this.migrateColumnTasks(sourceId, targetId);
+    this.dashboard.columns = this.dashboard.columns.filter((column) => column.id !== sourceId);
+    this.dashboard.today.taskIds = this.dashboard.today.taskIds.filter((id) => this.tasksById.has(id));
+    await this.savePluginData();
+    await this.refreshTasks();
+  }
+
+  async appendTask(task) {
+    await appendTask(this.app, task, this.dashboard.columns);
+  }
+
+  async writeTask(task) {
+    await writeTask(this.app, task, this.dashboard.columns);
+  }
+
+  async openSource(task) {
+    const target = parseWikiTarget(task.source);
+    if (!target) return;
+    const file = this.app.metadataCache.getFirstLinkpathDest(target, task.filePath);
+    if (file) {
+      await this.app.workspace.getLeaf(false).openFile(file);
+    } else {
+      new Notice("Source note was not found.");
+    }
+  }
+
+  async openTaskFile(task) {
+    const file = this.app.vault.getAbstractFileByPath(task.filePath);
+    if (file instanceof TFile) {
+      await this.app.workspace.getLeaf(false).openFile(file);
+    }
+  }
+};

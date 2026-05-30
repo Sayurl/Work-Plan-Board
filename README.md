@@ -8,15 +8,19 @@ The plugin collects tasks from `_Tasks.md` files and organizes them into plannin
 
 This plugin is in early development. The current build is a local development version and is not yet published as an official Obsidian community plugin.
 
-## Data
+## Configuration And Data
 
-Vault-specific board state is stored by Obsidian as `data.json` inside the plugin folder. This file can contain local task IDs, column order, and personal workflow settings, so it is intentionally ignored by Git.
+Declarative board settings are stored as `config.json` inside the plugin folder. This includes column definitions, completed task policy, and future timeline display settings. The file is intentionally ignored by Git in this repository because local workflows may contain personal naming, but it is designed so users can manage it with Git, Nix, or another declarative setup if desired.
 
-Use `data.example.json` as a sanitized reference for the expected structure.
+Vault-specific runtime state is stored by Obsidian as `data.json`. This includes Today task ordering, per-column task ordering, and selected UI state.
+
+Use `config.example.json` and `data.example.json` as sanitized references for the expected structure.
 
 ## Column Settings
 
 Columns can be added, renamed, reordered, moved between the top and bottom board sections, or deleted from the plugin settings.
+
+Column definitions are saved to `config.json`. Task ordering and Today membership are saved to `data.json`.
 
 When a column is deleted, choose another column as the destination. Tasks in the deleted column are rewritten with the destination column's Markdown tag.
 
@@ -41,6 +45,15 @@ Obsidian community plugin releases require these files:
 - `manifest.json`
 - `styles.css`
 
+## Development
+
+The editable source lives in `src/`. The root `main.js` file is a generated esbuild bundle.
+
+```sh
+npm run build
+npm run check
+```
+
 ## Privacy
 
-Do not commit real work data, customer names, internal project names, screenshots with confidential content, or local `data.json` files.
+Do not commit real work data, customer names, internal project names, screenshots with confidential content, or local `config.json` / `data.json` files.

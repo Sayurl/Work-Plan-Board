@@ -1,0 +1,27 @@
+const BOARD_VIEW = "project-task-board-view";
+const SIDEBAR_VIEW = "project-task-board-sidebar";
+
+const CATEGORY_COLUMNS = [
+  { id: "high-priority", name: "High Priority", tag: "#high-priority", group: "primary" },
+  { id: "deadline", name: "Deadline", tag: "#deadline", group: "primary" },
+  { id: "prepare", name: "Prepare", tag: "#prepare", group: "secondary" },
+  { id: "inbox", name: "Inbox", tag: "#inbox", group: "secondary" }
+];
+
+const META_KEYS = {
+  id: "id",
+  project: "フォルダ",
+  source: "由来",
+  nextAction: "次の一手",
+  waitingFor: "相手",
+  followUpDate: "次に確認する日",
+  goal: "到達点",
+  comment: "コメント"
+};
+
+module.exports = {
+  BOARD_VIEW,
+  SIDEBAR_VIEW,
+  CATEGORY_COLUMNS,
+  META_KEYS
+};
