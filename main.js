@@ -434,6 +434,43 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     await this.refreshTasks();
   }
 
+  async addColumnFromBoard(layoutGroup = "secondary") {
+    const columns = this.dashboard.columns.slice();
+    const baseName = "New Column";
+    const id = makeColumnId(baseName, columns);
+    columns.push({
+      id,
+      name: baseName,
+      categoryTag: `#${id}`,
+      layoutGroup,
+      taskIds: []
+    });
+    await this.updateColumns(columns);
+  }
+
+  async moveColumn(columnId, direction) {
+    const columns = this.dashboard.columns.slice();
+    const index = columns.findIndex((column) => column.id === columnId);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= columns.length) return;
+    [columns[index], columns[target]] = [columns[target], columns[index]];
+    await this.updateColumns(columns);
+  }
+
+  async updateColumnLayout(columnId, layoutGroup) {
+    const column = this.getColumn(columnId);
+    if (!column) return;
+    column.layoutGroup = layoutGroup === "primary" ? "primary" : "secondary";
+    await this.updateColumns(this.dashboard.columns);
+  }
+
+  async renameColumn(columnId, name) {
+    const column = this.getColumn(columnId);
+    if (!column) return;
+    column.name = clean(name) || column.name;
+    await this.updateColumns(this.dashboard.columns);
+  }
+
   async updateColumnTag(columnId, categoryTag) {
     const column = this.getColumn(columnId);
     if (!column) return;
@@ -555,6 +592,9 @@ class BoardView extends ItemView {
     toolbar.createEl("h2", { text: "Task Board" });
     const actions = toolbar.createDiv("ptb-toolbar-actions");
     actions.createEl("button", { text: "Refresh" }).onclick = () => this.plugin.refreshTasks();
+    actions.createEl("button", { text: "Add Column" }).onclick = async () => {
+      await this.plugin.addColumnFromBoard("secondary");
+    };
     actions.createEl("button", { text: "New Task" }).onclick = () => {
       this.plugin.selectedTaskId = null;
       this.plugin.openSidebar();
@@ -596,8 +636,26 @@ class BoardView extends ItemView {
     const tasks = this.plugin.getTasksForColumn(column.id);
     const columnEl = parent.createDiv("ptb-column");
     const header = columnEl.createDiv("ptb-column-header");
-    header.createEl("h3", { text: column.name });
-    header.createSpan({ text: String(tasks.length), cls: "ptb-count" });
+    const title = header.createDiv("ptb-column-title");
+    title.createEl("h3", { text: column.name });
+    title.createSpan({ text: String(tasks.length), cls: "ptb-count" });
+    const controls = header.createDiv("ptb-column-controls");
+    controls.createEl("button", { text: "←", attr: { "aria-label": "Move column left" } }).onclick = async () => {
+      await this.plugin.moveColumn(column.id, -1);
+    };
+    controls.createEl("button", { text: "→", attr: { "aria-label": "Move column right" } }).onclick = async () => {
+      await this.plugin.moveColumn(column.id, 1);
+    };
+    const layoutButton = controls.createEl("button", {
+      text: column.layoutGroup === "primary" ? "↓" : "↑",
+      attr: { "aria-label": column.layoutGroup === "primary" ? "Move column to bottom section" : "Move column to top section" }
+    });
+    layoutButton.onclick = async () => {
+      await this.plugin.updateColumnLayout(column.id, column.layoutGroup === "primary" ? "secondary" : "primary");
+    };
+    controls.createEl("button", { text: "Edit" }).onclick = () => {
+      this.renderColumnEditor(columnEl, column);
+    };
     const list = columnEl.createDiv("ptb-card-list");
     list.dataset.column = column.id;
     makeDropZone(list, async (taskId, targetId) => {
@@ -611,6 +669,41 @@ class BoardView extends ItemView {
     });
     for (const task of tasks) {
       list.appendChild(renderTaskCard(this.plugin, task, { inToday: this.plugin.dashboard.today.taskIds.includes(task.id) }));
+    }
+  }
+
+  renderColumnEditor(columnEl, column) {
+    const existing = columnEl.querySelector(".ptb-column-editor");
+    if (existing) {
+      existing.remove();
+      return;
+    }
+    const editor = columnEl.createDiv("ptb-column-editor");
+    const nameInput = field(editor, "Name", column.name);
+    const tagInput = field(editor, "Tag", column.categoryTag);
+    const row = editor.createDiv("ptb-column-editor-actions");
+    row.createEl("button", { text: "Save" }).onclick = async () => {
+      await this.plugin.renameColumn(column.id, nameInput.value);
+      const tag = normalizeTag(tagInput.value);
+      if (tag && tag !== column.categoryTag) {
+        await this.plugin.updateColumnTag(column.id, tag);
+      }
+    };
+    row.createEl("button", { text: "Cancel" }).onclick = () => editor.remove();
+    if (this.plugin.dashboard.columns.length > 1) {
+      const deleteBox = editor.createDiv("ptb-column-delete");
+      deleteBox.createEl("label", { text: "Move tasks to" });
+      const targetSelect = document.createElement("select");
+      for (const option of this.plugin.getColumnOptions(column.id)) {
+        const targetOption = document.createElement("option");
+        targetOption.value = option.id;
+        targetOption.text = option.name;
+        targetSelect.appendChild(targetOption);
+      }
+      deleteBox.appendChild(targetSelect);
+      deleteBox.createEl("button", { text: "Delete Column", cls: "mod-warning" }).onclick = async () => {
+        await this.plugin.deleteColumn(column.id, targetSelect.value);
+      };
     }
   }
 }

@@ -4,11 +4,14 @@
 
 .ptb-toolbar,
 .ptb-column-header,
+.ptb-column-title,
+.ptb-column-controls,
 .ptb-sidebar-header,
 .ptb-sidebar-actions,
 .ptb-focus-nav,
 .ptb-form-buttons,
-.ptb-card-actions {
+.ptb-card-actions,
+.ptb-column-editor-actions {
   align-items: center;
   display: flex;
   gap: 8px;
@@ -55,6 +58,22 @@
   margin-bottom: 8px;
 }
 
+.ptb-column-title,
+.ptb-column-controls {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ptb-column-controls {
+  justify-content: flex-end;
+}
+
+.ptb-column-controls button {
+  font-size: 11px;
+  min-height: 24px;
+  padding: 2px 7px;
+}
+
 .ptb-count,
 .ptb-chip {
   background: var(--background-modifier-border);
@@ -75,6 +94,31 @@
   flex-direction: column;
   gap: 8px;
   min-height: 80px;
+}
+
+.ptb-column-editor {
+  border-top: 1px solid var(--background-modifier-border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding-top: 8px;
+}
+
+.ptb-column-editor-actions {
+  flex-wrap: wrap;
+}
+
+.ptb-column-delete {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ptb-column-delete label {
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .ptb-card {
