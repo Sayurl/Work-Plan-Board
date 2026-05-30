@@ -19,8 +19,6 @@ const CATEGORY_COLUMNS = [
   { id: "inbox", name: "Inbox", tag: "#inbox", group: "secondary" }
 ];
 
-const CATEGORY_IDS = new Set(CATEGORY_COLUMNS.map((column) => column.id));
-const CATEGORY_TAGS = new Map(CATEGORY_COLUMNS.map((column) => [column.tag, column.id]));
 const META_KEYS = {
   id: "id",
   project: "フォルダ",
@@ -154,7 +152,7 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
           end += 1;
         }
 
-        const task = parseTaskBlock(file.path, lines.slice(index, end), index, end);
+        const task = parseTaskBlock(file.path, lines.slice(index, end), index, end, this.dashboard.columns);
         if (!task || task.completed || seen.has(task.id)) {
           index = end - 1;
           continue;
@@ -188,7 +186,7 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
         while (end < lines.length && !/^- \[[ xX]\] /.test(lines[end])) {
           end += 1;
         }
-        const task = parseTaskBlock(file.path, lines.slice(index, end), index, end);
+        const task = parseTaskBlock(file.path, lines.slice(index, end), index, end, this.dashboard.columns);
         if (task && task.completed) {
           removals.push({ start: index, end });
           archiveBlocks.push(lines.slice(index, end).join("\n"));
@@ -227,24 +225,9 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     }
 
     this.dashboard.today.taskIds = uniqueIds(this.dashboard.today.taskIds).filter((id) => ids.has(id));
-    this.dashboard.columns = this.dashboard.columns.filter((column) => CATEGORY_IDS.has(column.id));
+    this.dashboard.columns = normalizeColumns(this.dashboard.columns);
 
-    for (const columnDef of CATEGORY_COLUMNS) {
-      let column = this.dashboard.columns.find((item) => item.id === columnDef.id);
-      if (!column) {
-        column = {
-          id: columnDef.id,
-          name: columnDef.name,
-          categoryTag: columnDef.tag,
-          layoutGroup: columnDef.group,
-          taskIds: []
-        };
-        this.dashboard.columns.push(column);
-      }
-      column.name = columnDef.name;
-      column.categoryTag = columnDef.tag;
-      column.layoutGroup = column.layoutGroup || columnDef.group;
-
+    for (const column of this.dashboard.columns) {
       const categoryIds = byCategory.get(column.id) || [];
       const existing = uniqueIds(column.taskIds).filter((id) => categoryIds.includes(id));
       const missing = categoryIds.filter((id) => !existing.includes(id));
@@ -308,7 +291,7 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
 
   async moveTaskToCategory(taskId, categoryId, targetId) {
     const task = this.getTask(taskId);
-    if (!task || !CATEGORY_IDS.has(categoryId)) return;
+    if (!task || !this.getColumn(categoryId)) return;
 
     for (const column of this.dashboard.columns) {
       column.taskIds = column.taskIds.filter((id) => id !== taskId);
@@ -353,7 +336,7 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
       filePath: await this.resolveTaskFilePath(input)
     };
 
-    if (!task.title || !CATEGORY_IDS.has(task.category)) {
+    if (!task.title || !this.getColumn(task.category)) {
       new Notice("Task title and category are required.");
       return null;
     }
@@ -383,7 +366,7 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     task.goal = clean(input.goal);
     task.comment = clean(input.comment);
 
-    if (!task.title || !CATEGORY_IDS.has(task.category)) {
+    if (!task.title || !this.getColumn(task.category)) {
       new Notice("Task title and category are required.");
       return;
     }
@@ -435,11 +418,78 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
       .sort((a, b) => a.localeCompare(b));
   }
 
+  getColumn(columnId) {
+    return this.dashboard.columns.find((column) => column.id === columnId);
+  }
+
+  getColumnOptions(excludeId = "") {
+    return this.dashboard.columns
+      .filter((column) => column.id !== excludeId)
+      .map((column) => ({ id: column.id, name: column.name }));
+  }
+
+  async updateColumns(columns) {
+    this.dashboard.columns = normalizeColumns(columns);
+    await this.savePluginData();
+    await this.refreshTasks();
+  }
+
+  async updateColumnTag(columnId, categoryTag) {
+    const column = this.getColumn(columnId);
+    if (!column) return;
+    column.categoryTag = normalizeTag(categoryTag) || column.categoryTag;
+    this.dashboard.columns = normalizeColumns(this.dashboard.columns);
+    const tasks = this.tasks.filter((task) => task.category === columnId);
+    for (const task of tasks) {
+      await this.writeTask(task);
+    }
+    await this.savePluginData();
+    await this.refreshTasks();
+  }
+
+  async resetColumnsToDefault() {
+    const defaultColumns = normalizeColumns(DEFAULT_DATA.dashboards[0].columns);
+    const defaultIds = new Set(defaultColumns.map((column) => column.id));
+    const defaultInbox = defaultColumns.find((column) => column.id === "inbox") || defaultColumns[0];
+    const tasksToMove = this.tasks.filter((task) => !defaultIds.has(task.category));
+    this.dashboard.columns = defaultColumns;
+    for (const task of tasksToMove) {
+      task.category = defaultInbox.id;
+      await this.writeTask(task);
+    }
+    await this.savePluginData();
+    await this.refreshTasks();
+  }
+
+  async migrateColumnTasks(sourceId, targetId) {
+    if (sourceId === targetId) return;
+    const source = this.getColumn(sourceId);
+    const target = this.getColumn(targetId);
+    if (!source || !target) return;
+    const tasks = this.tasks.filter((task) => task.category === sourceId);
+    for (const task of tasks) {
+      task.category = targetId;
+      await this.writeTask(task);
+    }
+  }
+
+  async deleteColumn(sourceId, targetId) {
+    if (this.dashboard.columns.length <= 1) {
+      new Notice("At least one column is required.");
+      return;
+    }
+    await this.migrateColumnTasks(sourceId, targetId);
+    this.dashboard.columns = this.dashboard.columns.filter((column) => column.id !== sourceId);
+    this.dashboard.today.taskIds = this.dashboard.today.taskIds.filter((id) => this.tasksById.has(id));
+    await this.savePluginData();
+    await this.refreshTasks();
+  }
+
   async appendTask(task) {
     await ensureFile(this.app, task.filePath);
     const file = this.app.vault.getAbstractFileByPath(task.filePath);
     const content = await this.app.vault.read(file);
-    const addition = renderTaskMarkdown(task);
+    const addition = renderTaskMarkdown(task, this.dashboard.columns);
     const nextContent = content.trim().length > 0
       ? `${content.replace(/\s*$/, "\n\n")}${addition}\n`
       : `${addition}\n`;
@@ -454,7 +504,7 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     }
     const content = await this.app.vault.read(file);
     const lines = content.split(/\r?\n/);
-    const replacement = renderTaskMarkdown(task).split("\n");
+    const replacement = renderTaskMarkdown(task, this.dashboard.columns).split("\n");
     lines.splice(task.lineStart, task.lineEnd - task.lineStart, ...replacement);
     await this.app.vault.modify(file, lines.join("\n"));
   }
@@ -700,6 +750,146 @@ class TaskBoardSettingTab extends PluginSettingTab {
             await this.plugin.savePluginData();
           });
       });
+
+    containerEl.createEl("h3", { text: "Columns" });
+    containerEl.createEl("p", {
+      text: "Columns define the task category tags used by the board. Deleting a column rewrites its tasks to the selected destination column.",
+      cls: "setting-item-description"
+    });
+
+    const list = containerEl.createDiv("ptb-settings-columns");
+    for (const [index, column] of this.plugin.dashboard.columns.entries()) {
+      this.renderColumnSetting(list, column, index);
+    }
+
+    new Setting(containerEl)
+      .setName("Add column")
+      .setDesc("Create a new category column.")
+      .addButton((button) => {
+        button
+          .setButtonText("Add")
+          .setCta()
+          .onClick(async () => {
+            const columns = this.plugin.dashboard.columns.slice();
+            const baseName = "New Column";
+            const id = makeColumnId(baseName, columns);
+            columns.push({
+              id,
+              name: baseName,
+              categoryTag: `#${id}`,
+              layoutGroup: "secondary",
+              taskIds: []
+            });
+            await this.plugin.updateColumns(columns);
+            this.display();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("Reset columns")
+      .setDesc("Restore default columns. Tasks in custom columns are moved to Inbox.")
+      .addButton((button) => {
+        button
+          .setButtonText("Reset to defaults")
+          .setWarning()
+          .onClick(async () => {
+            await this.plugin.resetColumnsToDefault();
+            this.display();
+          });
+      });
+  }
+
+  renderColumnSetting(parent, column, index) {
+    const details = parent.createEl("details", { cls: "ptb-settings-column" });
+    const summary = details.createEl("summary", { cls: "ptb-settings-column-summary" });
+    summary.createEl("strong", { text: column.name });
+    summary.createSpan({ text: column.categoryTag, cls: "ptb-chip" });
+    summary.createSpan({ text: column.layoutGroup === "primary" ? "Top" : "Bottom", cls: "ptb-chip" });
+    const row = details.createDiv("ptb-settings-column-body");
+
+    new Setting(row)
+      .setName("Name")
+      .addText((text) => {
+        text.setValue(column.name);
+        text.inputEl.addEventListener("blur", async () => {
+          column.name = text.getValue().trim() || column.name;
+          await this.plugin.updateColumns(this.plugin.dashboard.columns);
+          this.display();
+        });
+      });
+
+    new Setting(row)
+      .setName("Tag")
+      .setDesc("Use one Markdown tag, for example #high-priority.")
+      .addText((text) => {
+        text.setValue(column.categoryTag);
+        text.inputEl.addEventListener("blur", async () => {
+          const tag = normalizeTag(text.getValue());
+          if (!tag || tag === column.categoryTag) return;
+          await this.plugin.updateColumnTag(column.id, tag);
+          this.display();
+        });
+      });
+
+    new Setting(row)
+      .setName("Layout")
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption("primary", "Top")
+          .addOption("secondary", "Bottom")
+          .setValue(column.layoutGroup || "secondary")
+          .onChange(async (value) => {
+            column.layoutGroup = value;
+            await this.plugin.updateColumns(this.plugin.dashboard.columns);
+            this.display();
+          });
+      });
+
+    const actions = new Setting(row).setName("Actions");
+    actions.addButton((button) => {
+      button
+        .setButtonText("Up")
+        .setDisabled(index === 0)
+        .onClick(async () => {
+          const columns = this.plugin.dashboard.columns.slice();
+          [columns[index - 1], columns[index]] = [columns[index], columns[index - 1]];
+          await this.plugin.updateColumns(columns);
+          this.display();
+        });
+    });
+    actions.addButton((button) => {
+      button
+        .setButtonText("Down")
+        .setDisabled(index === this.plugin.dashboard.columns.length - 1)
+        .onClick(async () => {
+          const columns = this.plugin.dashboard.columns.slice();
+          [columns[index], columns[index + 1]] = [columns[index + 1], columns[index]];
+          await this.plugin.updateColumns(columns);
+          this.display();
+        });
+    });
+
+    const deleteSetting = new Setting(row).setName("Delete");
+    let targetId = this.plugin.getColumnOptions(column.id)[0]?.id || "";
+    deleteSetting.addDropdown((dropdown) => {
+      for (const option of this.plugin.getColumnOptions(column.id)) {
+        dropdown.addOption(option.id, option.name);
+      }
+      dropdown.setValue(targetId);
+      dropdown.onChange((value) => {
+        targetId = value;
+      });
+    });
+    deleteSetting.addButton((button) => {
+      button
+        .setButtonText("Delete and move tasks")
+        .setWarning()
+        .setDisabled(!targetId)
+        .onClick(async () => {
+          await this.plugin.deleteColumn(column.id, targetId);
+          this.display();
+        });
+    });
   }
 }
 
@@ -739,7 +929,7 @@ function renderTaskCard(plugin, task, options = {}) {
   top.createEl("div", { text: task.title, cls: "ptb-card-title" });
 
   const meta = card.createDiv("ptb-card-meta");
-  meta.createSpan({ text: categoryName(task.category), cls: "ptb-chip" });
+  meta.createSpan({ text: categoryName(task.category, plugin.dashboard.columns), cls: "ptb-chip" });
   if (task.project) meta.createSpan({ text: displayPathLabel(task.project), cls: "ptb-chip" });
   if (task.dueDate) meta.createSpan({ text: `Due ${task.dueDate}`, cls: "ptb-chip ptb-chip-due" });
   if (task.estimate) meta.createSpan({ text: task.estimate, cls: "ptb-chip" });
@@ -817,7 +1007,7 @@ function renderTaskForm(plugin, task) {
 
   const fields = {};
   fields.title = field(el, "Task name", task ? task.title : "");
-  fields.category = selectField(el, "Category", task ? task.category : "inbox");
+  fields.category = selectField(el, "Category", task ? task.category : defaultColumnId(plugin.dashboard.columns), plugin.dashboard.columns);
   fields.project = searchField(el, "Project folder", task ? task.project : "", plugin.getFolderOptions(), {
     placeholder: "Type to search folders"
   });
@@ -947,12 +1137,12 @@ function autoResizeTextarea(input) {
   input.style.height = `${Math.max(min, Math.min(input.scrollHeight, 150))}px`;
 }
 
-function selectField(parent, label, value) {
+function selectField(parent, label, value, columns) {
   const row = parent.createDiv("ptb-form-row");
   row.createEl("label", { text: label });
   const select = document.createElement("select");
   row.appendChild(select);
-  for (const column of CATEGORY_COLUMNS) {
+  for (const column of columns) {
     const option = document.createElement("option");
     option.text = column.name;
     option.value = column.id;
@@ -962,17 +1152,18 @@ function selectField(parent, label, value) {
   return select;
 }
 
-function parseTaskBlock(filePath, blockLines, lineStart, lineEnd) {
+function parseTaskBlock(filePath, blockLines, lineStart, lineEnd, columns) {
   const first = blockLines[0];
   const match = first.match(/^- \[([ xX])\] (.*)$/);
   if (!match) return null;
   const completed = match[1].toLowerCase() === "x";
   const rawBody = match[2];
+  const categoryTagsByTag = new Map(columns.map((column) => [column.categoryTag, column.id]));
   const categoryTags = [...rawBody.matchAll(/(^|\s)(#[\w-]+)/g)]
     .map((item) => item[2])
-    .filter((tag) => CATEGORY_TAGS.has(tag));
+    .filter((tag) => categoryTagsByTag.has(tag));
   if (categoryTags.length !== 1) return null;
-  const category = CATEGORY_TAGS.get(categoryTags[0]);
+  const category = categoryTagsByTag.get(categoryTags[0]);
 
   const meta = {};
   for (const line of blockLines.slice(1)) {
@@ -1014,8 +1205,8 @@ function parseTaskBlock(filePath, blockLines, lineStart, lineEnd) {
   };
 }
 
-function renderTaskMarkdown(task) {
-  const parts = [`- [${task.completed ? "x" : " "}] ${task.title}`, tagForCategory(task.category)];
+function renderTaskMarkdown(task, columns) {
+  const parts = [`- [${task.completed ? "x" : " "}] ${task.title}`, tagForCategory(task.category, columns)];
   if (task.dueDate) parts.push(`📅 ${task.dueDate}`);
   if (task.estimate) parts.push(`⏱ ${task.estimate}`);
 
@@ -1035,13 +1226,13 @@ function addMeta(lines, key, value) {
   if (clean(value)) lines.push(`  - ${key}: ${clean(value)}`);
 }
 
-function tagForCategory(category) {
-  const column = CATEGORY_COLUMNS.find((item) => item.id === category);
-  return column ? column.tag : "#inbox";
+function tagForCategory(category, columns) {
+  const column = columns.find((item) => item.id === category);
+  return column ? column.categoryTag : "#inbox";
 }
 
-function categoryName(category) {
-  const column = CATEGORY_COLUMNS.find((item) => item.id === category);
+function categoryName(category, columns) {
+  const column = columns.find((item) => item.id === category);
   return column ? column.name : category;
 }
 
@@ -1053,9 +1244,76 @@ function normalizeData(data) {
   const dashboard = next.dashboards[0];
   dashboard.today = dashboard.today || { name: "Today", layoutGroup: "primary", taskIds: [] };
   dashboard.today.taskIds = Array.isArray(dashboard.today.taskIds) ? dashboard.today.taskIds : [];
-  dashboard.columns = Array.isArray(dashboard.columns) ? dashboard.columns : [];
+  dashboard.columns = normalizeColumns(Array.isArray(dashboard.columns) ? dashboard.columns : []);
   next.settings = Object.assign({}, DEFAULT_DATA.settings, next.settings || {});
   return next;
+}
+
+function normalizeColumns(columns) {
+  const source = Array.isArray(columns) && columns.length > 0
+    ? columns
+    : DEFAULT_DATA.dashboards[0].columns;
+  const usedIds = new Set();
+  const usedTags = new Set();
+  const normalized = [];
+  for (const column of source) {
+    const name = clean(column.name) || "Column";
+    const id = uniqueColumnId(clean(column.id) || slugify(name) || "column", usedIds);
+    const categoryTag = uniqueTag(normalizeTag(column.categoryTag) || `#${id}`, usedTags);
+    normalized.push({
+      id,
+      name,
+      categoryTag,
+      layoutGroup: column.layoutGroup === "primary" ? "primary" : "secondary",
+      taskIds: uniqueIds(column.taskIds)
+    });
+  }
+  return normalized;
+}
+
+function defaultColumnId(columns) {
+  return columns.find((column) => column.id === "inbox")?.id || columns[0]?.id || "";
+}
+
+function makeColumnId(name, columns) {
+  return uniqueColumnId(slugify(name) || "column", new Set(columns.map((column) => column.id)));
+}
+
+function uniqueColumnId(baseId, usedIds) {
+  let id = slugify(baseId) || "column";
+  let index = 2;
+  while (usedIds.has(id)) {
+    id = `${slugify(baseId) || "column"}-${index}`;
+    index += 1;
+  }
+  usedIds.add(id);
+  return id;
+}
+
+function uniqueTag(tag, usedTags) {
+  const base = normalizeTag(tag) || "#column";
+  let next = base;
+  let index = 2;
+  while (usedTags.has(next)) {
+    next = `${base}-${index}`;
+    index += 1;
+  }
+  usedTags.add(next);
+  return next;
+}
+
+function normalizeTag(value) {
+  const cleaned = clean(value).replace(/\s+/g, "-").toLowerCase();
+  if (!cleaned) return "";
+  return `#${cleaned.replace(/^#+/, "")}`;
+}
+
+function slugify(value) {
+  return clean(value)
+    .toLowerCase()
+    .replace(/^#+/, "")
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function uniqueIds(ids) {

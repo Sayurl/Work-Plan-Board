@@ -245,6 +245,30 @@
   display: block;
 }
 
+.ptb-settings-columns {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.ptb-settings-column {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.ptb-settings-column-summary {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.ptb-settings-column-body {
+  margin-top: 8px;
+}
+
 .ptb-search-option,
 .ptb-search-empty {
   font-size: 12px;

@@ -14,6 +14,14 @@ Vault-specific board state is stored by Obsidian as `data.json` inside the plugi
 
 Use `data.example.json` as a sanitized reference for the expected structure.
 
+## Column Settings
+
+Columns can be added, renamed, reordered, moved between the top and bottom board sections, or deleted from the plugin settings.
+
+When a column is deleted, choose another column as the destination. Tasks in the deleted column are rewritten with the destination column's Markdown tag.
+
+Resetting columns restores the default columns and moves tasks from custom columns to Inbox.
+
 ## Development Install
 
 Clone this repository into your vault's community plugin folder:
