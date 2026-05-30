@@ -292,8 +292,84 @@
 .ptb-settings-columns {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin: 12px 0;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.ptb-columns-setting {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.ptb-columns-setting-header {
+  cursor: pointer;
+}
+
+.ptb-columns-setting .setting-item-name {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+}
+
+.ptb-columns-setting > .setting-item-info,
+.ptb-columns-setting > .setting-item-control {
+  flex: 1 1 auto;
+}
+
+.ptb-columns-setting > .setting-item-control {
+  min-width: 0;
+}
+
+.ptb-settings-column-panel {
+  flex: 0 0 100%;
+  max-height: 0;
+  margin-top: 8px;
+  overflow: hidden;
+  transition: max-height 240ms ease-in-out;
+  width: 100%;
+}
+
+.ptb-settings-column-panel-inner {
+  padding-top: 8px;
+}
+
+.ptb-settings-column-summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  list-style: none;
+}
+
+.ptb-settings-column-summary::-webkit-details-marker {
+  display: none;
+}
+
+.ptb-settings-chevron {
+  color: var(--text-muted);
+  flex: 0 0 auto;
+  height: 18px;
+  line-height: 1;
+  transition: transform 120ms ease;
+  width: 18px;
+}
+
+.ptb-settings-chevron > svg {
+  height: 18px;
+  width: 18px;
+  transition: transform 120ms ease;
+}
+
+.ptb-columns-setting:not(.is-open) .ptb-columns-chevron > svg,
+.ptb-settings-column:not(.is-open) > .ptb-settings-column-summary .ptb-settings-chevron > svg {
+  transform: rotate(-90deg);
+}
+
+.ptb-settings-column-details-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+  margin: 8px 0 4px;
 }
 
 .ptb-settings-column {
@@ -310,6 +386,26 @@
 }
 
 .ptb-settings-column-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 220ms ease-in-out;
+}
+
+.ptb-settings-column-body-inner {
+  margin-top: 8px;
+}
+
+.ptb-settings-column-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ptb-settings-column-note {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.35;
   margin-top: 8px;
 }
 

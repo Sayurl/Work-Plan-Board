@@ -4,6 +4,7 @@ const {
   Plugin,
   PluginSettingTab,
   Setting,
+  setIcon,
   TFile,
   TFolder,
   WorkspaceLeaf
@@ -844,61 +845,100 @@ class TaskBoardSettingTab extends PluginSettingTab {
           });
       });
 
-    containerEl.createEl("h3", { text: "Columns" });
-    containerEl.createEl("p", {
-      text: "Columns define the task category tags used by the board. Deleting a column rewrites its tasks to the selected destination column.",
-      cls: "setting-item-description"
+    const columnSetting = new Setting(containerEl)
+      .setName("Columns")
+      .setDesc("Manage board columns, category tags, layout, and task migration when deleting columns.");
+    columnSetting.settingEl.addClass("ptb-columns-setting");
+    columnSetting.infoEl.addClass("ptb-columns-setting-header");
+    const columnChevron = columnSetting.nameEl.createSpan({ cls: "ptb-settings-chevron ptb-columns-chevron" });
+    setIcon(columnChevron, "chevron-down");
+    columnSetting.nameEl.prepend(columnChevron);
+    columnSetting.controlEl.createSpan({ text: String(this.plugin.dashboard.columns.length), cls: "ptb-count" });
+
+    const columnPanel = document.createElement("div");
+    columnPanel.addClass("ptb-settings-column-panel");
+    const columnPanelInner = columnPanel.createDiv("ptb-settings-column-panel-inner");
+    columnSetting.settingEl.appendChild(columnPanel);
+    const toggleColumns = () => {
+      const isOpen = columnSetting.settingEl.hasClass("is-open");
+      columnSetting.settingEl.toggleClass("is-open", !isOpen);
+      columnPanel.style.maxHeight = isOpen ? "0px" : `${columnPanel.scrollHeight}px`;
+    };
+    columnPanel.addEventListener("toggle", () => {
+      if (columnSetting.settingEl.hasClass("is-open")) {
+        columnPanel.style.maxHeight = `${columnPanel.scrollHeight}px`;
+      }
+    }, true);
+    columnSetting.infoEl.onclick = toggleColumns;
+    columnSetting.infoEl.setAttribute("role", "button");
+    columnSetting.infoEl.setAttribute("tabindex", "0");
+    columnSetting.infoEl.onkeydown = (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      toggleColumns();
+    };
+
+    columnPanelInner.createDiv({
+      text: "Column Details",
+      cls: "ptb-settings-column-details-title"
     });
 
-    const list = containerEl.createDiv("ptb-settings-columns");
+    const list = columnPanelInner.createDiv("ptb-settings-columns");
     for (const [index, column] of this.plugin.dashboard.columns.entries()) {
       this.renderColumnSetting(list, column, index);
     }
 
-    new Setting(containerEl)
-      .setName("Add column")
-      .setDesc("Create a new category column.")
-      .addButton((button) => {
-        button
-          .setButtonText("Add")
-          .setCta()
-          .onClick(async () => {
-            const columns = this.plugin.dashboard.columns.slice();
-            const baseName = "New Column";
-            const id = makeColumnId(baseName, columns);
-            columns.push({
-              id,
-              name: baseName,
-              categoryTag: `#${id}`,
-              layoutGroup: "secondary",
-              taskIds: []
-            });
-            await this.plugin.updateColumns(columns);
-            this.display();
-          });
+    const columnActions = columnPanelInner.createDiv("ptb-settings-column-actions");
+    const addButton = columnActions.createEl("button", { text: "Add column" });
+    addButton.addClass("mod-cta");
+    addButton.onclick = async () => {
+      const columns = this.plugin.dashboard.columns.slice();
+      const baseName = "New Column";
+      const id = makeColumnId(baseName, columns);
+      columns.push({
+        id,
+        name: baseName,
+        categoryTag: `#${id}`,
+        layoutGroup: "secondary",
+        taskIds: []
       });
+      await this.plugin.updateColumns(columns);
+      this.display();
+    };
 
-    new Setting(containerEl)
-      .setName("Reset columns")
-      .setDesc("Restore default columns. Tasks in custom columns are moved to Inbox.")
-      .addButton((button) => {
-        button
-          .setButtonText("Reset to defaults")
-          .setWarning()
-          .onClick(async () => {
-            await this.plugin.resetColumnsToDefault();
-            this.display();
-          });
-      });
+    const resetButton = columnActions.createEl("button", { text: "Reset to defaults" });
+    resetButton.addClass("mod-warning");
+    resetButton.onclick = async () => {
+      await this.plugin.resetColumnsToDefault();
+      this.display();
+    };
+
+    columnPanelInner.createDiv({
+      text: "Resetting restores default columns and moves tasks from custom columns to Inbox.",
+      cls: "ptb-settings-column-note"
+    });
   }
 
   renderColumnSetting(parent, column, index) {
-    const details = parent.createEl("details", { cls: "ptb-settings-column" });
-    const summary = details.createEl("summary", { cls: "ptb-settings-column-summary" });
+    const details = parent.createDiv("ptb-settings-column");
+    const summary = details.createDiv("ptb-settings-column-summary");
+    const chevron = summary.createSpan({ cls: "ptb-settings-chevron" });
+    setIcon(chevron, "chevron-down");
     summary.createEl("strong", { text: column.name });
     summary.createSpan({ text: column.categoryTag, cls: "ptb-chip" });
     summary.createSpan({ text: column.layoutGroup === "primary" ? "Top" : "Bottom", cls: "ptb-chip" });
-    const row = details.createDiv("ptb-settings-column-body");
+    const body = details.createDiv("ptb-settings-column-body");
+    const row = body.createDiv("ptb-settings-column-body-inner");
+    summary.onclick = () => {
+      const isOpen = details.hasClass("is-open");
+      details.toggleClass("is-open", !isOpen);
+      body.style.maxHeight = isOpen ? "0px" : `${body.scrollHeight}px`;
+    };
+    body.addEventListener("toggle", () => {
+      if (details.hasClass("is-open")) {
+        body.style.maxHeight = `${body.scrollHeight}px`;
+      }
+    }, true);
 
     new Setting(row)
       .setName("Name")
