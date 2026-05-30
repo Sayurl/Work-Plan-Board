@@ -13,12 +13,10 @@ const BOARD_VIEW = "project-task-board-view";
 const SIDEBAR_VIEW = "project-task-board-sidebar";
 
 const CATEGORY_COLUMNS = [
-  { id: "inbox", name: "Inbox", tag: "#inbox", group: "secondary" },
-  { id: "this-week", name: "This Week", tag: "#this-week", group: "secondary" },
+  { id: "high-priority", name: "High Priority", tag: "#high-priority", group: "primary" },
   { id: "deadline", name: "Deadline", tag: "#deadline", group: "primary" },
   { id: "prepare", name: "Prepare", tag: "#prepare", group: "secondary" },
-  { id: "waiting", name: "Waiting", tag: "#waiting", group: "primary" },
-  { id: "backlog", name: "Backlog", tag: "#backlog", group: "secondary" }
+  { id: "inbox", name: "Inbox", tag: "#inbox", group: "secondary" }
 ];
 
 const CATEGORY_IDS = new Set(CATEGORY_COLUMNS.map((column) => column.id));
@@ -229,6 +227,7 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     }
 
     this.dashboard.today.taskIds = uniqueIds(this.dashboard.today.taskIds).filter((id) => ids.has(id));
+    this.dashboard.columns = this.dashboard.columns.filter((column) => CATEGORY_IDS.has(column.id));
 
     for (const columnDef of CATEGORY_COLUMNS) {
       let column = this.dashboard.columns.find((item) => item.id === columnDef.id);
@@ -517,11 +516,12 @@ class BoardView extends ItemView {
 
     const primary = container.createDiv("ptb-board-section ptb-primary");
     this.renderToday(primary);
-    const thisWeek = this.plugin.dashboard.columns.find((item) => item.id === "this-week");
-    if (thisWeek) this.renderColumn(primary, thisWeek);
+    for (const column of this.plugin.dashboard.columns.filter((item) => item.layoutGroup === "primary")) {
+      this.renderColumn(primary, column);
+    }
 
     const secondary = container.createDiv("ptb-board-section ptb-secondary");
-    for (const column of this.plugin.dashboard.columns.filter((item) => item.id !== "this-week")) {
+    for (const column of this.plugin.dashboard.columns.filter((item) => item.layoutGroup !== "primary")) {
       this.renderColumn(secondary, column);
     }
   }

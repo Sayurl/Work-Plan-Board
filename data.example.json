@@ -10,17 +10,10 @@
       },
       "columns": [
         {
-          "id": "inbox",
-          "name": "Inbox",
-          "categoryTag": "#inbox",
-          "layoutGroup": "secondary",
-          "taskIds": []
-        },
-        {
-          "id": "this-week",
-          "name": "This Week",
-          "categoryTag": "#this-week",
-          "layoutGroup": "secondary",
+          "id": "high-priority",
+          "name": "High Priority",
+          "categoryTag": "#high-priority",
+          "layoutGroup": "primary",
           "taskIds": []
         },
         {
@@ -38,16 +31,9 @@
           "taskIds": []
         },
         {
-          "id": "waiting",
-          "name": "Waiting",
-          "categoryTag": "#waiting",
-          "layoutGroup": "primary",
-          "taskIds": []
-        },
-        {
-          "id": "backlog",
-          "name": "Backlog",
-          "categoryTag": "#backlog",
+          "id": "inbox",
+          "name": "Inbox",
+          "categoryTag": "#inbox",
           "layoutGroup": "secondary",
           "taskIds": []
         }
@@ -58,4 +44,3 @@
     "completedTaskPolicy": "keep"
   }
 }
-

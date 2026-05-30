@@ -2,7 +2,7 @@
 
 Work Plan Board is an Obsidian plugin for planning tasks and scheduled work across projects in one board.
 
-The plugin collects tasks from `_Tasks.md` files and organizes them into planning columns such as Today, This Week, Deadline, Prepare, Waiting, and Backlog.
+The plugin collects tasks from `_Tasks.md` files and organizes them into planning columns such as Today, High Priority, Deadline, Prepare, and Inbox.
 
 ## Status
 
