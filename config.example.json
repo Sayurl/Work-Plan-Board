@@ -12,24 +12,28 @@
         {
           "id": "high-priority",
           "name": "High Priority",
+          "type": "manual",
           "categoryTag": "#high-priority",
           "layoutGroup": "primary"
         },
         {
           "id": "deadline",
           "name": "Deadline",
-          "categoryTag": "#deadline",
+          "type": "smart",
+          "smartType": "deadline",
           "layoutGroup": "primary"
         },
         {
           "id": "prepare",
           "name": "Prepare",
+          "type": "manual",
           "categoryTag": "#prepare",
           "layoutGroup": "secondary"
         },
         {
           "id": "inbox",
           "name": "Inbox",
+          "type": "manual",
           "categoryTag": "#inbox",
           "layoutGroup": "secondary"
         }

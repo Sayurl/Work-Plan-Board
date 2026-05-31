@@ -77,6 +77,10 @@
   border-color: var(--interactive-accent);
 }
 
+.ptb-column-smart {
+  border-style: dashed;
+}
+
 .ptb-column-header {
   justify-content: space-between;
   margin-bottom: 8px;
@@ -164,6 +168,11 @@
 }
 
 .ptb-column-delete label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.ptb-column-editor-note {
   color: var(--text-muted);
   font-size: 12px;
 }

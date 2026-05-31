@@ -10,10 +10,10 @@ var require_constants = __commonJS({
     var BOARD_VIEW2 = "project-task-board-view";
     var SIDEBAR_VIEW2 = "project-task-board-sidebar";
     var CATEGORY_COLUMNS = [
-      { id: "high-priority", name: "High Priority", tag: "#high-priority", group: "primary" },
-      { id: "deadline", name: "Deadline", tag: "#deadline", group: "primary" },
-      { id: "prepare", name: "Prepare", tag: "#prepare", group: "secondary" },
-      { id: "inbox", name: "Inbox", tag: "#inbox", group: "secondary" }
+      { id: "high-priority", name: "High Priority", type: "manual", tag: "#high-priority", group: "primary" },
+      { id: "deadline", name: "Deadline", type: "smart", smartType: "deadline", group: "primary" },
+      { id: "prepare", name: "Prepare", type: "manual", tag: "#prepare", group: "secondary" },
+      { id: "inbox", name: "Inbox", type: "manual", tag: "#inbox", group: "secondary" }
     ];
     var META_KEYS = {
       id: "id",
@@ -51,7 +51,8 @@ var require_defaults = __commonJS({
           columns: CATEGORY_COLUMNS.map((column) => ({
             id: column.id,
             name: column.name,
-            categoryTag: column.tag,
+            type: column.type,
+            ...column.type === "smart" ? { smartType: column.smartType } : { categoryTag: column.tag },
             layoutGroup: column.group
           }))
         }
@@ -155,51 +156,125 @@ var require_column_model = __commonJS({
   "src/columns/column-model.js"(exports2, module2) {
     var { DEFAULT_CONFIG: DEFAULT_CONFIG2 } = require_defaults();
     var { clean: clean2, normalizeTag: normalizeTag2, slugify, uniqueColumnId, uniqueIds, uniqueTag } = require_text();
+    var SMART_TYPES = /* @__PURE__ */ new Set(["deadline"]);
     function normalizeColumns2(columns, fallbackColumns = DEFAULT_CONFIG2.dashboards[0].columns) {
       const source = Array.isArray(columns) && columns.length > 0 ? columns : fallbackColumns;
       const usedIds = /* @__PURE__ */ new Set();
       const usedTags = /* @__PURE__ */ new Set();
       const normalized = [];
       for (const column of source) {
+        if (normalizeColumnType(column) === "smart" && normalizeSmartType(column, clean2(column == null ? void 0 : column.id)) === "deadline") {
+          usedTags.add("#deadline");
+        }
+      }
+      for (const column of source) {
         const name = clean2(column.name) || "Column";
         const id = uniqueColumnId(clean2(column.id) || slugify(name) || "column", usedIds);
+        const type = normalizeColumnType(column);
+        if (type === "smart") {
+          const smartType = normalizeSmartType(column, id);
+          reserveSmartTags(smartType, usedTags);
+          normalized.push({
+            id,
+            name,
+            type: "smart",
+            smartType,
+            layoutGroup: column.layoutGroup === "primary" ? "primary" : "secondary",
+            taskIds: uniqueIds(column.taskIds)
+          });
+          continue;
+        }
         const categoryTag = uniqueTag(normalizeTag2(column.categoryTag) || `#${id}`, usedTags);
         normalized.push({
           id,
           name,
+          type: "manual",
           categoryTag,
           layoutGroup: column.layoutGroup === "primary" ? "primary" : "secondary",
           taskIds: uniqueIds(column.taskIds)
         });
       }
+      if (!normalized.some(isManualColumn2)) {
+        normalized.push({
+          id: uniqueColumnId("inbox", usedIds),
+          name: "Inbox",
+          type: "manual",
+          categoryTag: uniqueTag("#inbox", usedTags),
+          layoutGroup: "secondary",
+          taskIds: []
+        });
+      }
       return normalized;
     }
     function stripColumnState(column) {
-      return {
+      const base = {
         id: column.id,
         name: column.name,
-        categoryTag: column.categoryTag,
+        type: column.type === "smart" ? "smart" : "manual",
         layoutGroup: column.layoutGroup === "primary" ? "primary" : "secondary"
       };
+      if (base.type === "smart") {
+        base.smartType = normalizeSmartType(column, column.id);
+      } else {
+        base.categoryTag = column.categoryTag;
+      }
+      return base;
     }
     function defaultColumnId(columns) {
       var _a, _b;
-      return ((_a = columns.find((column) => column.id === "inbox")) == null ? void 0 : _a.id) || ((_b = columns[0]) == null ? void 0 : _b.id) || "";
+      const manual = getManualColumns2(columns);
+      return ((_a = manual.find((column) => column.id === "inbox")) == null ? void 0 : _a.id) || ((_b = manual[0]) == null ? void 0 : _b.id) || "";
     }
     function categoryName(category, columns) {
-      const column = columns.find((item) => item.id === category);
+      const column = getManualColumns2(columns).find((item) => item.id === category);
       return column ? column.name : category;
     }
     function tagForCategory(category, columns) {
-      const column = columns.find((item) => item.id === category);
-      return column ? column.categoryTag : "#inbox";
+      const manual = getManualColumns2(columns);
+      const column = manual.find((item) => item.id === category);
+      const fallback = manual.find((item) => item.id === "inbox") || manual[0];
+      return column ? column.categoryTag : (fallback == null ? void 0 : fallback.categoryTag) || "#inbox";
+    }
+    function getManualColumns2(columns) {
+      return (columns || []).filter(isManualColumn2);
+    }
+    function isManualColumn2(column) {
+      return (column == null ? void 0 : column.type) !== "smart";
+    }
+    function isSmartColumn2(column) {
+      return (column == null ? void 0 : column.type) === "smart";
+    }
+    function deprecatedCategoryTags(columns) {
+      const manualTags = new Set(getManualColumns2(columns).map((column) => column.categoryTag).filter(Boolean));
+      const tags = [];
+      if ((columns || []).some((column) => isSmartColumn2(column) && column.smartType === "deadline") && !manualTags.has("#deadline")) {
+        tags.push("#deadline");
+      }
+      return tags;
+    }
+    function normalizeColumnType(column) {
+      if ((column == null ? void 0 : column.type) === "smart" || (column == null ? void 0 : column.smartType)) return "smart";
+      if (clean2(column == null ? void 0 : column.id) === "deadline" && normalizeTag2(column == null ? void 0 : column.categoryTag) === "#deadline") return "smart";
+      return "manual";
+    }
+    function normalizeSmartType(column, id) {
+      if (SMART_TYPES.has(column == null ? void 0 : column.smartType)) return column.smartType;
+      if (id === "deadline") return "deadline";
+      return "deadline";
+    }
+    function reserveSmartTags(smartType, usedTags) {
+      if (smartType === "deadline") usedTags.add("#deadline");
     }
     module2.exports = {
       normalizeColumns: normalizeColumns2,
       stripColumnState,
       defaultColumnId,
       categoryName,
-      tagForCategory
+      tagForCategory,
+      getManualColumns: getManualColumns2,
+      isManualColumn: isManualColumn2,
+      isSmartColumn: isSmartColumn2,
+      deprecatedCategoryTags
     };
   }
 });
@@ -312,7 +387,7 @@ var require_config = __commonJS({
 var require_data = __commonJS({
   "src/core/data.js"(exports2, module2) {
     var { DEFAULT_DATA, cloneDefault } = require_defaults();
-    var { normalizeColumns: normalizeColumns2, stripColumnState } = require_column_model();
+    var { getManualColumns: getManualColumns2, normalizeColumns: normalizeColumns2, stripColumnState } = require_column_model();
     var { clean: clean2, uniqueIds } = require_text();
     function normalizeData2(data, config) {
       var _a;
@@ -326,7 +401,7 @@ var require_data = __commonJS({
       }
       const sourceColumnTaskIds = Object.assign({}, legacyTaskIds, sourceDashboard.columnTaskIds || {});
       const columnTaskIds = {};
-      for (const column of configDashboard.columns) {
+      for (const column of getManualColumns2(configDashboard.columns)) {
         columnTaskIds[column.id] = uniqueIds(sourceColumnTaskIds[column.id]);
       }
       return {
@@ -382,7 +457,7 @@ var require_data = __commonJS({
         today: {
           taskIds: uniqueIds((_c = dashboard.today) == null ? void 0 : _c.taskIds)
         },
-        columnTaskIds: Object.fromEntries(columns.map((column) => [column.id, uniqueIds(column.taskIds)]))
+        columnTaskIds: Object.fromEntries(getManualColumns2(columns).map((column) => [column.id, uniqueIds(column.taskIds)]))
       };
     }
     module2.exports = {
@@ -396,7 +471,7 @@ var require_data = __commonJS({
 // src/core/reconcile.js
 var require_reconcile = __commonJS({
   "src/core/reconcile.js"(exports2, module2) {
-    var { normalizeColumns: normalizeColumns2 } = require_column_model();
+    var { isSmartColumn: isSmartColumn2, normalizeColumns: normalizeColumns2 } = require_column_model();
     var { uniqueIds } = require_text();
     function reconcileDashboard2(dashboard, tasks) {
       const ids = new Set(tasks.map((task) => task.id));
@@ -408,11 +483,20 @@ var require_reconcile = __commonJS({
       dashboard.today.taskIds = uniqueIds(dashboard.today.taskIds).filter((id) => ids.has(id));
       dashboard.columns = normalizeColumns2(dashboard.columns);
       for (const column of dashboard.columns) {
+        if (isSmartColumn2(column) && column.smartType === "deadline") {
+          column.taskIds = tasks.filter((task) => task.dueDate).sort(compareDeadlineTasks).map((task) => task.id);
+          continue;
+        }
         const categoryIds = byCategory.get(column.id) || [];
         const existing = uniqueIds(column.taskIds).filter((id) => categoryIds.includes(id));
         const missing = categoryIds.filter((id) => !existing.includes(id));
         column.taskIds = existing.concat(missing);
       }
+    }
+    function compareDeadlineTasks(a, b) {
+      const due = a.dueDate.localeCompare(b.dueDate);
+      if (due !== 0) return due;
+      return (a.title || a.id).localeCompare(b.title || b.id);
     }
     module2.exports = {
       reconcileDashboard: reconcileDashboard2
@@ -477,6 +561,7 @@ var require_column_service = __commonJS({
 var require_setting_tab = __commonJS({
   "src/settings/setting-tab.js"(exports2, module2) {
     var { PluginSettingTab, Setting, setIcon } = require("obsidian");
+    var { isManualColumn: isManualColumn2, isSmartColumn: isSmartColumn2 } = require_column_model();
     var { makeColumnId: makeColumnId2, normalizeTag: normalizeTag2 } = require_text();
     var TaskBoardSettingTab2 = class extends PluginSettingTab {
       constructor(app, plugin) {
@@ -493,7 +578,7 @@ var require_setting_tab = __commonJS({
             await this.plugin.savePluginData();
           });
         });
-        const columnSetting = new Setting(containerEl).setName("Columns").setDesc("Manage board columns, category tags, layout, and task migration when deleting columns.");
+        const columnSetting = new Setting(containerEl).setName("Columns").setDesc("Manage manual columns, smart views, layout, and task migration when deleting columns.");
         columnSetting.settingEl.addClass("ptb-columns-setting");
         columnSetting.infoEl.addClass("ptb-columns-setting-header");
         const columnChevron = columnSetting.nameEl.createSpan({ cls: "ptb-settings-chevron ptb-columns-chevron" });
@@ -540,6 +625,7 @@ var require_setting_tab = __commonJS({
           columns.push({
             id,
             name: baseName,
+            type: "manual",
             categoryTag: `#${id}`,
             layoutGroup: "secondary",
             taskIds: []
@@ -565,7 +651,12 @@ var require_setting_tab = __commonJS({
         const chevron = summary.createSpan({ cls: "ptb-settings-chevron" });
         setIcon(chevron, "chevron-down");
         summary.createEl("strong", { text: column.name });
-        summary.createSpan({ text: column.categoryTag, cls: "ptb-chip" });
+        if (isSmartColumn2(column)) {
+          summary.createSpan({ text: "Auto", cls: "ptb-chip" });
+          summary.createSpan({ text: column.smartType === "deadline" ? "Due date" : "Smart", cls: "ptb-chip" });
+        } else {
+          summary.createSpan({ text: column.categoryTag, cls: "ptb-chip" });
+        }
         summary.createSpan({ text: column.layoutGroup === "primary" ? "Top" : "Bottom", cls: "ptb-chip" });
         const body = details.createDiv("ptb-settings-column-body");
         const row = body.createDiv("ptb-settings-column-body-inner");
@@ -587,15 +678,19 @@ var require_setting_tab = __commonJS({
             this.display();
           });
         });
-        new Setting(row).setName("Tag").setDesc("Use one Markdown tag, for example #high-priority.").addText((text) => {
-          text.setValue(column.categoryTag);
-          text.inputEl.addEventListener("blur", async () => {
-            const tag = normalizeTag2(text.getValue());
-            if (!tag || tag === column.categoryTag) return;
-            await this.plugin.updateColumnTag(column.id, tag);
-            this.display();
+        if (isManualColumn2(column)) {
+          new Setting(row).setName("Tag").setDesc("Use one Markdown tag, for example #high-priority.").addText((text) => {
+            text.setValue(column.categoryTag);
+            text.inputEl.addEventListener("blur", async () => {
+              const tag = normalizeTag2(text.getValue());
+              if (!tag || tag === column.categoryTag) return;
+              await this.plugin.updateColumnTag(column.id, tag);
+              this.display();
+            });
           });
-        });
+        } else {
+          new Setting(row).setName("Smart view").setDesc(column.smartType === "deadline" ? "Shows incomplete tasks with due dates, sorted by the nearest date." : "Automatic column.");
+        }
         new Setting(row).setName("Layout").addDropdown((dropdown) => {
           dropdown.addOption("primary", "Top").addOption("secondary", "Bottom").setValue(column.layoutGroup || "secondary").onChange(async (value) => {
             column.layoutGroup = value;
@@ -621,22 +716,31 @@ var require_setting_tab = __commonJS({
           });
         });
         const deleteSetting = new Setting(row).setName("Delete");
-        let targetId = ((_a = this.plugin.getColumnOptions(column.id)[0]) == null ? void 0 : _a.id) || "";
-        deleteSetting.addDropdown((dropdown) => {
-          for (const option of this.plugin.getColumnOptions(column.id)) {
-            dropdown.addOption(option.id, option.name);
-          }
-          dropdown.setValue(targetId);
-          dropdown.onChange((value) => {
-            targetId = value;
+        if (isManualColumn2(column)) {
+          let targetId = ((_a = this.plugin.getColumnOptions(column.id)[0]) == null ? void 0 : _a.id) || "";
+          deleteSetting.addDropdown((dropdown) => {
+            for (const option of this.plugin.getColumnOptions(column.id)) {
+              dropdown.addOption(option.id, option.name);
+            }
+            dropdown.setValue(targetId);
+            dropdown.onChange((value) => {
+              targetId = value;
+            });
           });
-        });
-        deleteSetting.addButton((button) => {
-          button.setButtonText("Delete and move tasks").setWarning().setDisabled(!targetId).onClick(async () => {
-            await this.plugin.deleteColumn(column.id, targetId);
-            this.display();
+          deleteSetting.addButton((button) => {
+            button.setButtonText("Delete and move tasks").setWarning().setDisabled(!targetId).onClick(async () => {
+              await this.plugin.deleteColumn(column.id, targetId);
+              this.display();
+            });
           });
-        });
+        } else {
+          deleteSetting.addButton((button) => {
+            button.setButtonText("Delete smart view").setWarning().onClick(async () => {
+              await this.plugin.deleteColumn(column.id, "");
+              this.display();
+            });
+          });
+        }
       }
     };
     module2.exports = {
@@ -725,7 +829,7 @@ var require_source_links = __commonJS({
 var require_task_markdown = __commonJS({
   "src/tasks/task-markdown.js"(exports2, module2) {
     var { META_KEYS } = require_constants();
-    var { defaultColumnId, tagForCategory } = require_column_model();
+    var { defaultColumnId, getManualColumns: getManualColumns2, tagForCategory } = require_column_model();
     var { clean: clean2 } = require_text();
     var { normalizeSourceInput: normalizeSourceInput2 } = require_source_links();
     function parseTaskBlock(filePath, blockLines, lineStart, lineEnd, columns, options = {}) {
@@ -742,11 +846,13 @@ var require_task_markdown = __commonJS({
       }
       const id = meta[META_KEYS.id];
       if (!id) return null;
-      const categoryTagsByTag = new Map(columns.map((column) => [column.categoryTag, column.id]));
+      const categoryTagsByTag = new Map(getManualColumns2(columns).map((column) => [column.categoryTag, column.id]));
+      const deprecatedTags = new Set(options.deprecatedCategoryTags || []);
       const bodyTags = [...rawBody.matchAll(/(^|\s)(#[\w-]+)/g)].map((item) => item[2]);
       const categoryTags = bodyTags.filter((tag) => categoryTagsByTag.has(tag));
       let category = categoryTags.length === 1 ? categoryTagsByTag.get(categoryTags[0]) : "";
       let unknownCategoryTag = "";
+      const deprecatedCategoryTags = bodyTags.filter((tag) => deprecatedTags.has(tag));
       if (!category && options.allowUnknownCategory) {
         unknownCategoryTag = bodyTags.find((tag) => tag !== "#project" && !categoryTagsByTag.has(tag)) || "";
         category = options.defaultCategory || defaultColumnId(columns);
@@ -762,6 +868,7 @@ var require_task_markdown = __commonJS({
         completed,
         category,
         unknownCategoryTag,
+        deprecatedCategoryTags,
         project,
         dueDate: due ? due[1] : "",
         estimate: estimate ? estimate[1] : "",
@@ -805,7 +912,7 @@ var require_task_markdown = __commonJS({
 var require_task_repository = __commonJS({
   "src/tasks/task-repository.js"(exports2, module2) {
     var { Notice: Notice2, TFile: TFile2 } = require("obsidian");
-    var { defaultColumnId } = require_column_model();
+    var { defaultColumnId, deprecatedCategoryTags } = require_column_model();
     var { ensureFile } = require_vault();
     var { parseTaskBlock, renderTaskMarkdown } = require_task_markdown();
     async function scanTasks2(app, columns) {
@@ -822,7 +929,10 @@ var require_task_repository = __commonJS({
           while (end < lines.length && !/^- \[[ xX]\] /.test(lines[end])) {
             end += 1;
           }
-          const task = parseTaskBlock(file.path, lines.slice(index, end), index, end, columns);
+          const task = parseTaskBlock(file.path, lines.slice(index, end), index, end, columns, {
+            allowUnknownCategory: true,
+            defaultCategory: defaultColumnId(columns)
+          });
           if (!task || task.completed || seen.has(task.id)) {
             index = end - 1;
             continue;
@@ -875,8 +985,10 @@ var require_task_repository = __commonJS({
       }
     }
     async function reconcileInvalidTaskCategories2(app, columns) {
+      var _a;
       const fallbackCategory = defaultColumnId(columns);
       if (!fallbackCategory) return;
+      const deprecatedTags = deprecatedCategoryTags(columns);
       const taskFiles = app.vault.getMarkdownFiles().filter((file) => file.name === "_Tasks.md");
       for (const file of taskFiles) {
         const content = await app.vault.read(file);
@@ -890,9 +1002,10 @@ var require_task_repository = __commonJS({
           }
           const task = parseTaskBlock(file.path, lines.slice(index, end), index, end, columns, {
             allowUnknownCategory: true,
-            defaultCategory: fallbackCategory
+            defaultCategory: fallbackCategory,
+            deprecatedCategoryTags: deprecatedTags
           });
-          if (task == null ? void 0 : task.unknownCategoryTag) {
+          if ((task == null ? void 0 : task.unknownCategoryTag) || ((_a = task == null ? void 0 : task.deprecatedCategoryTags) == null ? void 0 : _a.length)) {
             const replacement = renderTaskMarkdown(task, columns).split("\n");
             lines.splice(index, end - index, ...replacement);
             end = index + replacement.length;
@@ -1126,26 +1239,28 @@ var require_task_card = __commonJS({
         event.dataTransfer.effectAllowed = "move";
       };
       card.ondragend = () => clearTaskDropIndicators(document);
-      card.ondragover = (event) => {
-        if (!hasTaskDrag(event.dataTransfer)) return;
-        event.preventDefault();
-        clearTaskDropIndicators(card.ownerDocument);
-        card.addClass(getVerticalPlacement(event, card) === "after" ? "is-task-drop-after" : "is-task-drop-before");
-      };
-      card.ondragleave = (event) => {
-        if (card.contains(event.relatedTarget)) return;
-        card.removeClass("is-task-drop-before");
-        card.removeClass("is-task-drop-after");
-      };
-      card.ondrop = (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const droppedId = event.dataTransfer.getData("text/plain");
-        const placement = getVerticalPlacement(event, card);
-        clearTaskDropIndicators(card.ownerDocument);
-        const list = card.parentElement;
-        if (list) list.dispatchEvent(new CustomEvent("ptb-drop-task", { detail: { taskId: droppedId, targetId: task.id, placement } }));
-      };
+      if (!options.disableDrop) {
+        card.ondragover = (event) => {
+          if (!hasTaskDrag(event.dataTransfer)) return;
+          event.preventDefault();
+          clearTaskDropIndicators(card.ownerDocument);
+          card.addClass(getVerticalPlacement(event, card) === "after" ? "is-task-drop-after" : "is-task-drop-before");
+        };
+        card.ondragleave = (event) => {
+          if (card.contains(event.relatedTarget)) return;
+          card.removeClass("is-task-drop-before");
+          card.removeClass("is-task-drop-after");
+        };
+        card.ondrop = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const droppedId = event.dataTransfer.getData("text/plain");
+          const placement = getVerticalPlacement(event, card);
+          clearTaskDropIndicators(card.ownerDocument);
+          const list = card.parentElement;
+          if (list) list.dispatchEvent(new CustomEvent("ptb-drop-task", { detail: { taskId: droppedId, targetId: task.id, placement } }));
+        };
+      }
       card.onclick = (event) => {
         if (event.target.closest("button") || event.target.closest("a") || event.target.closest("summary")) return;
         const details = card.querySelector(".ptb-details");
@@ -1223,6 +1338,7 @@ var require_task_card = __commonJS({
 var require_workboard_view = __commonJS({
   "src/views/workboard-view.js"(exports2, module2) {
     var { ItemView } = require("obsidian");
+    var { isManualColumn: isManualColumn2, isSmartColumn: isSmartColumn2 } = require_column_model();
     var { BOARD_VIEW: BOARD_VIEW2, SIDEBAR_VIEW: SIDEBAR_VIEW2 } = require_constants();
     var { normalizeTag: normalizeTag2 } = require_text();
     var { field } = require_controls();
@@ -1291,6 +1407,7 @@ var require_workboard_view = __commonJS({
       renderColumn(parent, column) {
         const tasks = this.plugin.getTasksForColumn(column.id);
         const columnEl = parent.createDiv("ptb-column");
+        if (isSmartColumn2(column)) columnEl.addClass("ptb-column-smart");
         columnEl.dataset.columnId = column.id;
         const header = columnEl.createDiv("ptb-column-header");
         const title = header.createDiv("ptb-column-title");
@@ -1308,6 +1425,7 @@ var require_workboard_view = __commonJS({
         };
         title.createEl("h3", { text: column.name });
         title.createSpan({ text: String(tasks.length), cls: "ptb-count" });
+        if (isSmartColumn2(column)) title.createSpan({ text: "Auto", cls: "ptb-chip" });
         const controls = header.createDiv("ptb-column-controls");
         controls.createEl("button", { text: "\u2190", attr: { "aria-label": "Move column left" } }).onclick = async () => {
           await this.plugin.moveColumn(column.id, -1);
@@ -1328,17 +1446,22 @@ var require_workboard_view = __commonJS({
         this.makeColumnTarget(columnEl, column);
         const list = columnEl.createDiv("ptb-card-list");
         list.dataset.column = column.id;
-        makeDropZone(list, async (taskId, targetId, placement) => {
-          const task = this.plugin.getTask(taskId);
-          if (!task) return;
-          if (task.category === column.id) {
-            await this.plugin.reorderTaskList(column.taskIds, taskId, targetId, placement);
-          } else {
-            await this.plugin.moveTaskToCategory(taskId, column.id, targetId, placement);
-          }
-        });
+        if (isManualColumn2(column)) {
+          makeDropZone(list, async (taskId, targetId, placement) => {
+            const task = this.plugin.getTask(taskId);
+            if (!task) return;
+            if (task.category === column.id) {
+              await this.plugin.reorderTaskList(column.taskIds, taskId, targetId, placement);
+            } else {
+              await this.plugin.moveTaskToCategory(taskId, column.id, targetId, placement);
+            }
+          });
+        }
         for (const task of tasks) {
-          list.appendChild(renderTaskCard(this.plugin, task, { inToday: this.plugin.dashboard.today.taskIds.includes(task.id) }));
+          list.appendChild(renderTaskCard(this.plugin, task, {
+            inToday: this.plugin.dashboard.today.taskIds.includes(task.id),
+            disableDrop: isSmartColumn2(column)
+          }));
         }
       }
       makeColumnDropZone(section, layoutGroup) {
@@ -1465,17 +1588,25 @@ var require_workboard_view = __commonJS({
         }
         const editor = columnEl.createDiv("ptb-column-editor");
         const nameInput = field(editor, "Name", column.name);
-        const tagInput = field(editor, "Tag", column.categoryTag);
+        const tagInput = isManualColumn2(column) ? field(editor, "Tag", column.categoryTag) : null;
+        if (isSmartColumn2(column)) {
+          editor.createDiv({
+            text: column.smartType === "deadline" ? "Shows tasks with due dates automatically." : "Automatic column.",
+            cls: "ptb-column-editor-note"
+          });
+        }
         const row = editor.createDiv("ptb-column-editor-actions");
         row.createEl("button", { text: "Save" }).onclick = async () => {
           await this.plugin.renameColumn(column.id, nameInput.value);
-          const tag = normalizeTag2(tagInput.value);
-          if (tag && tag !== column.categoryTag) {
-            await this.plugin.updateColumnTag(column.id, tag);
+          if (tagInput) {
+            const tag = normalizeTag2(tagInput.value);
+            if (tag && tag !== column.categoryTag) {
+              await this.plugin.updateColumnTag(column.id, tag);
+            }
           }
         };
         row.createEl("button", { text: "Cancel" }).onclick = () => editor.remove();
-        if (this.plugin.dashboard.columns.length > 1) {
+        if (isManualColumn2(column) && this.plugin.getManualColumns().length > 1) {
           const deleteBox = editor.createDiv("ptb-column-delete");
           deleteBox.createEl("label", { text: "Move tasks to" });
           const targetSelect = document.createElement("select");
@@ -1488,6 +1619,10 @@ var require_workboard_view = __commonJS({
           deleteBox.appendChild(targetSelect);
           deleteBox.createEl("button", { text: "Delete Column", cls: "mod-warning" }).onclick = async () => {
             await this.plugin.deleteColumn(column.id, targetSelect.value);
+          };
+        } else if (isSmartColumn2(column) && this.plugin.dashboard.columns.length > 1) {
+          row.createEl("button", { text: "Delete Column", cls: "mod-warning" }).onclick = async () => {
+            await this.plugin.deleteColumn(column.id, "");
           };
         }
       }
@@ -1514,7 +1649,7 @@ var require_task_form = __commonJS({
       const cancel = buttons.createEl("button", { text: "Cancel" });
       const fields = {};
       fields.title = field(el, "Task name", task ? task.title : "");
-      fields.category = selectField(el, "Category", task ? task.category : defaultColumnId(plugin.dashboard.columns), plugin.dashboard.columns);
+      fields.category = selectField(el, "Category", task ? task.category : defaultColumnId(plugin.dashboard.columns), plugin.getManualColumns());
       fields.project = searchField(el, "Project folder", task ? task.project : "", plugin.getFolderOptions(), {
         placeholder: "Type to search folders"
       });
@@ -1692,7 +1827,7 @@ var { DEFAULT_CONFIG } = require_defaults();
 var { loadConfig, saveConfig } = require_config();
 var { hydrateDashboard, normalizeData, syncConfigDataFromDashboard } = require_data();
 var { reconcileDashboard } = require_reconcile();
-var { normalizeColumns } = require_column_model();
+var { getManualColumns, isManualColumn, isSmartColumn, normalizeColumns } = require_column_model();
 var { moveColumnInList, moveColumnToGroupEnd: moveColumnToGroupEndInList, moveColumnToTarget } = require_column_service();
 var { TaskBoardSettingTab } = require_setting_tab();
 var { appendTask, processCompletedTasks, reconcileInvalidTaskCategories, scanTasks, writeTask } = require_task_repository();
@@ -1823,11 +1958,11 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
   }
   async moveTaskToCategory(taskId, categoryId, targetId, placement = "before") {
     const task = this.getTask(taskId);
-    if (!task || !this.getColumn(categoryId)) return;
-    for (const column of this.dashboard.columns) {
+    if (!task || !this.getManualColumn(categoryId)) return;
+    for (const column of this.getManualColumns()) {
       column.taskIds = column.taskIds.filter((id) => id !== taskId);
     }
-    const targetColumn = this.dashboard.columns.find((column) => column.id === categoryId);
+    const targetColumn = this.getManualColumn(categoryId);
     if (targetColumn) {
       const target = targetId ? targetColumn.taskIds.indexOf(targetId) : -1;
       if (target >= 0) targetColumn.taskIds.splice(placement === "after" ? target + 1 : target, 0, taskId);
@@ -1862,12 +1997,12 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
       comment: clean(input.comment),
       filePath: await this.resolveTaskFilePath(input)
     };
-    if (!task.title || !this.getColumn(task.category)) {
+    if (!task.title || !this.getManualColumn(task.category)) {
       new Notice("Task title and category are required.");
       return null;
     }
     await this.appendTask(task);
-    const column = this.dashboard.columns.find((item) => item.id === task.category);
+    const column = this.getManualColumn(task.category);
     if (column && !column.taskIds.includes(task.id)) column.taskIds.push(task.id);
     await this.savePluginData();
     await this.refreshTasks();
@@ -1888,16 +2023,16 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     task.followUpDate = clean(input.followUpDate);
     task.goal = clean(input.goal);
     task.comment = clean(input.comment);
-    if (!task.title || !this.getColumn(task.category)) {
+    if (!task.title || !this.getManualColumn(task.category)) {
       new Notice("Task title and category are required.");
       return;
     }
     await this.writeTask(task);
     if (oldCategory !== task.category) {
-      for (const column2 of this.dashboard.columns) {
+      for (const column2 of this.getManualColumns()) {
         column2.taskIds = column2.taskIds.filter((id) => id !== task.id);
       }
-      const column = this.dashboard.columns.find((item) => item.id === task.category);
+      const column = this.getManualColumn(task.category);
       if (column) column.taskIds.push(task.id);
       await this.savePluginData();
     }
@@ -1928,8 +2063,14 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
   getColumn(columnId) {
     return this.dashboard.columns.find((column) => column.id === columnId);
   }
+  getManualColumn(columnId) {
+    return getManualColumns(this.dashboard.columns).find((column) => column.id === columnId);
+  }
+  getManualColumns() {
+    return getManualColumns(this.dashboard.columns);
+  }
   getColumnOptions(excludeId = "") {
-    return this.dashboard.columns.filter((column) => column.id !== excludeId).map((column) => ({ id: column.id, name: column.name }));
+    return this.getManualColumns().filter((column) => column.id !== excludeId).map((column) => ({ id: column.id, name: column.name }));
   }
   async updateColumns(columns) {
     this.dashboard.columns = normalizeColumns(columns);
@@ -1943,6 +2084,7 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     columns.push({
       id,
       name: baseName,
+      type: "manual",
       categoryTag: `#${id}`,
       layoutGroup,
       taskIds: []
@@ -1972,7 +2114,7 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
   }
   async updateColumnTag(columnId, categoryTag) {
     const column = this.getColumn(columnId);
-    if (!column) return;
+    if (!column || !isManualColumn(column)) return;
     column.categoryTag = normalizeTag(categoryTag) || column.categoryTag;
     this.dashboard.columns = normalizeColumns(this.dashboard.columns);
     const tasks = this.tasks.filter((task) => task.category === columnId);
@@ -1984,9 +2126,10 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
   }
   async resetColumnsToDefault() {
     const defaultColumns = normalizeColumns(DEFAULT_CONFIG.dashboards[0].columns);
-    const defaultIds = new Set(defaultColumns.map((column) => column.id));
-    const defaultInbox = defaultColumns.find((column) => column.id === "inbox") || defaultColumns[0];
-    const tasksToMove = this.tasks.filter((task) => !defaultIds.has(task.category));
+    const defaultManualColumns = getManualColumns(defaultColumns);
+    const defaultManualIds = new Set(defaultManualColumns.map((column) => column.id));
+    const defaultInbox = defaultManualColumns.find((column) => column.id === "inbox") || defaultManualColumns[0];
+    const tasksToMove = this.tasks.filter((task) => !defaultManualIds.has(task.category));
     this.dashboard.columns = defaultColumns;
     for (const task of tasksToMove) {
       task.category = defaultInbox.id;
@@ -1998,8 +2141,8 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
   async migrateColumnTasks(sourceId, targetId) {
     if (sourceId === targetId) return;
     const source = this.getColumn(sourceId);
-    const target = this.getColumn(targetId);
-    if (!source || !target) return;
+    const target = this.getManualColumn(targetId);
+    if (!source || !isManualColumn(source) || !target) return;
     const tasks = this.tasks.filter((task) => task.category === sourceId);
     for (const task of tasks) {
       task.category = targetId;
@@ -2007,11 +2150,17 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     }
   }
   async deleteColumn(sourceId, targetId) {
-    if (this.dashboard.columns.length <= 1) {
+    const source = this.getColumn(sourceId);
+    if (!source) return;
+    if (isManualColumn(source) && this.getManualColumns().length <= 1) {
       new Notice("At least one column is required.");
       return;
     }
-    await this.migrateColumnTasks(sourceId, targetId);
+    if (isManualColumn(source)) await this.migrateColumnTasks(sourceId, targetId);
+    if (isSmartColumn(source) && this.dashboard.columns.length <= 1) {
+      new Notice("At least one column is required.");
+      return;
+    }
     this.dashboard.columns = this.dashboard.columns.filter((column) => column.id !== sourceId);
     this.dashboard.today.taskIds = this.dashboard.today.taskIds.filter((id) => this.tasksById.has(id));
     await this.savePluginData();

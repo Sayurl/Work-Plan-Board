@@ -13,7 +13,7 @@ function renderTaskForm(plugin, task) {
 
   const fields = {};
   fields.title = field(el, "Task name", task ? task.title : "");
-  fields.category = selectField(el, "Category", task ? task.category : defaultColumnId(plugin.dashboard.columns), plugin.dashboard.columns);
+  fields.category = selectField(el, "Category", task ? task.category : defaultColumnId(plugin.dashboard.columns), plugin.getManualColumns());
   fields.project = searchField(el, "Project folder", task ? task.project : "", plugin.getFolderOptions(), {
     placeholder: "Type to search folders"
   });

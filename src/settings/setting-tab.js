@@ -1,4 +1,5 @@
 const { PluginSettingTab, Setting, setIcon } = require("obsidian");
+const { isManualColumn, isSmartColumn } = require("../columns/column-model");
 const { makeColumnId, normalizeTag } = require("../utils/text");
 
 class TaskBoardSettingTab extends PluginSettingTab {
@@ -29,7 +30,7 @@ class TaskBoardSettingTab extends PluginSettingTab {
 
     const columnSetting = new Setting(containerEl)
       .setName("Columns")
-      .setDesc("Manage board columns, category tags, layout, and task migration when deleting columns.");
+      .setDesc("Manage manual columns, smart views, layout, and task migration when deleting columns.");
     columnSetting.settingEl.addClass("ptb-columns-setting");
     columnSetting.infoEl.addClass("ptb-columns-setting-header");
     const columnChevron = columnSetting.nameEl.createSpan({ cls: "ptb-settings-chevron ptb-columns-chevron" });
@@ -80,6 +81,7 @@ class TaskBoardSettingTab extends PluginSettingTab {
       columns.push({
         id,
         name: baseName,
+        type: "manual",
         categoryTag: `#${id}`,
         layoutGroup: "secondary",
         taskIds: []
@@ -107,7 +109,12 @@ class TaskBoardSettingTab extends PluginSettingTab {
     const chevron = summary.createSpan({ cls: "ptb-settings-chevron" });
     setIcon(chevron, "chevron-down");
     summary.createEl("strong", { text: column.name });
-    summary.createSpan({ text: column.categoryTag, cls: "ptb-chip" });
+    if (isSmartColumn(column)) {
+      summary.createSpan({ text: "Auto", cls: "ptb-chip" });
+      summary.createSpan({ text: column.smartType === "deadline" ? "Due date" : "Smart", cls: "ptb-chip" });
+    } else {
+      summary.createSpan({ text: column.categoryTag, cls: "ptb-chip" });
+    }
     summary.createSpan({ text: column.layoutGroup === "primary" ? "Top" : "Bottom", cls: "ptb-chip" });
     const body = details.createDiv("ptb-settings-column-body");
     const row = body.createDiv("ptb-settings-column-body-inner");
@@ -133,18 +140,24 @@ class TaskBoardSettingTab extends PluginSettingTab {
         });
       });
 
-    new Setting(row)
-      .setName("Tag")
-      .setDesc("Use one Markdown tag, for example #high-priority.")
-      .addText((text) => {
-        text.setValue(column.categoryTag);
-        text.inputEl.addEventListener("blur", async () => {
-          const tag = normalizeTag(text.getValue());
-          if (!tag || tag === column.categoryTag) return;
-          await this.plugin.updateColumnTag(column.id, tag);
-          this.display();
+    if (isManualColumn(column)) {
+      new Setting(row)
+        .setName("Tag")
+        .setDesc("Use one Markdown tag, for example #high-priority.")
+        .addText((text) => {
+          text.setValue(column.categoryTag);
+          text.inputEl.addEventListener("blur", async () => {
+            const tag = normalizeTag(text.getValue());
+            if (!tag || tag === column.categoryTag) return;
+            await this.plugin.updateColumnTag(column.id, tag);
+            this.display();
+          });
         });
-      });
+    } else {
+      new Setting(row)
+        .setName("Smart view")
+        .setDesc(column.smartType === "deadline" ? "Shows incomplete tasks with due dates, sorted by the nearest date." : "Automatic column.");
+    }
 
     new Setting(row)
       .setName("Layout")
@@ -185,26 +198,38 @@ class TaskBoardSettingTab extends PluginSettingTab {
     });
 
     const deleteSetting = new Setting(row).setName("Delete");
-    let targetId = this.plugin.getColumnOptions(column.id)[0]?.id || "";
-    deleteSetting.addDropdown((dropdown) => {
-      for (const option of this.plugin.getColumnOptions(column.id)) {
-        dropdown.addOption(option.id, option.name);
-      }
-      dropdown.setValue(targetId);
-      dropdown.onChange((value) => {
-        targetId = value;
-      });
-    });
-    deleteSetting.addButton((button) => {
-      button
-        .setButtonText("Delete and move tasks")
-        .setWarning()
-        .setDisabled(!targetId)
-        .onClick(async () => {
-          await this.plugin.deleteColumn(column.id, targetId);
-          this.display();
+    if (isManualColumn(column)) {
+      let targetId = this.plugin.getColumnOptions(column.id)[0]?.id || "";
+      deleteSetting.addDropdown((dropdown) => {
+        for (const option of this.plugin.getColumnOptions(column.id)) {
+          dropdown.addOption(option.id, option.name);
+        }
+        dropdown.setValue(targetId);
+        dropdown.onChange((value) => {
+          targetId = value;
         });
-    });
+      });
+      deleteSetting.addButton((button) => {
+        button
+          .setButtonText("Delete and move tasks")
+          .setWarning()
+          .setDisabled(!targetId)
+          .onClick(async () => {
+            await this.plugin.deleteColumn(column.id, targetId);
+            this.display();
+          });
+      });
+    } else {
+      deleteSetting.addButton((button) => {
+        button
+          .setButtonText("Delete smart view")
+          .setWarning()
+          .onClick(async () => {
+            await this.plugin.deleteColumn(column.id, "");
+            this.display();
+          });
+      });
+    }
   }
 }
 

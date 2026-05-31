@@ -13,7 +13,10 @@ const DEFAULT_CONFIG = {
       columns: CATEGORY_COLUMNS.map((column) => ({
         id: column.id,
         name: column.name,
-        categoryTag: column.tag,
+        type: column.type,
+        ...(column.type === "smart"
+          ? { smartType: column.smartType }
+          : { categoryTag: column.tag }),
         layoutGroup: column.group
       }))
     }

@@ -2,10 +2,10 @@ const BOARD_VIEW = "project-task-board-view";
 const SIDEBAR_VIEW = "project-task-board-sidebar";
 
 const CATEGORY_COLUMNS = [
-  { id: "high-priority", name: "High Priority", tag: "#high-priority", group: "primary" },
-  { id: "deadline", name: "Deadline", tag: "#deadline", group: "primary" },
-  { id: "prepare", name: "Prepare", tag: "#prepare", group: "secondary" },
-  { id: "inbox", name: "Inbox", tag: "#inbox", group: "secondary" }
+  { id: "high-priority", name: "High Priority", type: "manual", tag: "#high-priority", group: "primary" },
+  { id: "deadline", name: "Deadline", type: "smart", smartType: "deadline", group: "primary" },
+  { id: "prepare", name: "Prepare", type: "manual", tag: "#prepare", group: "secondary" },
+  { id: "inbox", name: "Inbox", type: "manual", tag: "#inbox", group: "secondary" }
 ];
 
 const META_KEYS = {

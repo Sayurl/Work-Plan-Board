@@ -4,8 +4,9 @@ const test = require("node:test");
 const { parseTaskBlock, renderTaskMarkdown } = require("../src/tasks/task-markdown");
 
 const columns = [
-  { id: "high-priority", name: "High Priority", categoryTag: "#high-priority", layoutGroup: "primary" },
-  { id: "inbox", name: "Inbox", categoryTag: "#inbox", layoutGroup: "secondary" }
+  { id: "high-priority", name: "High Priority", type: "manual", categoryTag: "#high-priority", layoutGroup: "primary" },
+  { id: "deadline", name: "Deadline", type: "smart", smartType: "deadline", layoutGroup: "primary" },
+  { id: "inbox", name: "Inbox", type: "manual", categoryTag: "#inbox", layoutGroup: "secondary" }
 ];
 
 test("parses managed task markdown blocks", () => {
@@ -45,6 +46,7 @@ test("renders task markdown with configured category tags", () => {
   }, columns);
 
   assert.match(markdown, /^- \[ \] Render config-backed task #inbox 📅 2026-06-02 ⏱ 30m/m);
+  assert.equal(markdown.includes("#deadline"), false);
   assert.match(markdown, /  - id: task-2/);
   assert.match(markdown, /  - 由来: \[\[Project Task Board\/Project Task Board アップデート予定\|Project Task Board アップデート予定\]\]/);
 });
@@ -60,4 +62,22 @@ test("can parse unknown category tags as inbox during reconcile", () => {
 
   assert.equal(task.category, "inbox");
   assert.equal(task.unknownCategoryTag, "#old-column");
+});
+
+test("treats legacy deadline tags as deprecated category tags", () => {
+  const task = parseTaskBlock("_Tasks.md", [
+    "- [ ] Legacy deadline task #deadline 📅 2026-06-04",
+    "  - id: task-4"
+  ], 0, 2, columns, {
+    allowUnknownCategory: true,
+    defaultCategory: "inbox",
+    deprecatedCategoryTags: ["#deadline"]
+  });
+  const markdown = renderTaskMarkdown(task, columns);
+
+  assert.equal(task.category, "inbox");
+  assert.equal(task.dueDate, "2026-06-04");
+  assert.deepEqual(task.deprecatedCategoryTags, ["#deadline"]);
+  assert.match(markdown, /^- \[ \] Legacy deadline task #inbox 📅 2026-06-04/m);
+  assert.equal(markdown.includes("#deadline"), false);
 });

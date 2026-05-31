@@ -1,6 +1,6 @@
 {
   "name": "work-plan-board",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "description": "Plan tasks and scheduled work across projects in one Obsidian board.",
   "scripts": {

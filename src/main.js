@@ -4,7 +4,7 @@ const { DEFAULT_CONFIG } = require("./core/defaults");
 const { loadConfig, saveConfig } = require("./core/config");
 const { hydrateDashboard, normalizeData, syncConfigDataFromDashboard } = require("./core/data");
 const { reconcileDashboard } = require("./core/reconcile");
-const { normalizeColumns } = require("./columns/column-model");
+const { getManualColumns, isManualColumn, isSmartColumn, normalizeColumns } = require("./columns/column-model");
 const { moveColumnInList, moveColumnToGroupEnd: moveColumnToGroupEndInList, moveColumnToTarget } = require("./columns/column-service");
 const { TaskBoardSettingTab } = require("./settings/setting-tab");
 const { appendTask, processCompletedTasks, reconcileInvalidTaskCategories, scanTasks, writeTask } = require("./tasks/task-repository");
@@ -155,13 +155,13 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
 
   async moveTaskToCategory(taskId, categoryId, targetId, placement = "before") {
     const task = this.getTask(taskId);
-    if (!task || !this.getColumn(categoryId)) return;
+    if (!task || !this.getManualColumn(categoryId)) return;
 
-    for (const column of this.dashboard.columns) {
+    for (const column of this.getManualColumns()) {
       column.taskIds = column.taskIds.filter((id) => id !== taskId);
     }
 
-    const targetColumn = this.dashboard.columns.find((column) => column.id === categoryId);
+    const targetColumn = this.getManualColumn(categoryId);
     if (targetColumn) {
       const target = targetId ? targetColumn.taskIds.indexOf(targetId) : -1;
       if (target >= 0) targetColumn.taskIds.splice(placement === "after" ? target + 1 : target, 0, taskId);
@@ -200,13 +200,13 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
       filePath: await this.resolveTaskFilePath(input)
     };
 
-    if (!task.title || !this.getColumn(task.category)) {
+    if (!task.title || !this.getManualColumn(task.category)) {
       new Notice("Task title and category are required.");
       return null;
     }
 
     await this.appendTask(task);
-    const column = this.dashboard.columns.find((item) => item.id === task.category);
+    const column = this.getManualColumn(task.category);
     if (column && !column.taskIds.includes(task.id)) column.taskIds.push(task.id);
     await this.savePluginData();
     await this.refreshTasks();
@@ -230,17 +230,17 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     task.goal = clean(input.goal);
     task.comment = clean(input.comment);
 
-    if (!task.title || !this.getColumn(task.category)) {
+    if (!task.title || !this.getManualColumn(task.category)) {
       new Notice("Task title and category are required.");
       return;
     }
 
     await this.writeTask(task);
     if (oldCategory !== task.category) {
-      for (const column of this.dashboard.columns) {
+      for (const column of this.getManualColumns()) {
         column.taskIds = column.taskIds.filter((id) => id !== task.id);
       }
-      const column = this.dashboard.columns.find((item) => item.id === task.category);
+      const column = this.getManualColumn(task.category);
       if (column) column.taskIds.push(task.id);
       await this.savePluginData();
     }
@@ -286,8 +286,16 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     return this.dashboard.columns.find((column) => column.id === columnId);
   }
 
+  getManualColumn(columnId) {
+    return getManualColumns(this.dashboard.columns).find((column) => column.id === columnId);
+  }
+
+  getManualColumns() {
+    return getManualColumns(this.dashboard.columns);
+  }
+
   getColumnOptions(excludeId = "") {
-    return this.dashboard.columns
+    return this.getManualColumns()
       .filter((column) => column.id !== excludeId)
       .map((column) => ({ id: column.id, name: column.name }));
   }
@@ -305,6 +313,7 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     columns.push({
       id,
       name: baseName,
+      type: "manual",
       categoryTag: `#${id}`,
       layoutGroup,
       taskIds: []
@@ -340,7 +349,7 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
 
   async updateColumnTag(columnId, categoryTag) {
     const column = this.getColumn(columnId);
-    if (!column) return;
+    if (!column || !isManualColumn(column)) return;
     column.categoryTag = normalizeTag(categoryTag) || column.categoryTag;
     this.dashboard.columns = normalizeColumns(this.dashboard.columns);
     const tasks = this.tasks.filter((task) => task.category === columnId);
@@ -353,9 +362,10 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
 
   async resetColumnsToDefault() {
     const defaultColumns = normalizeColumns(DEFAULT_CONFIG.dashboards[0].columns);
-    const defaultIds = new Set(defaultColumns.map((column) => column.id));
-    const defaultInbox = defaultColumns.find((column) => column.id === "inbox") || defaultColumns[0];
-    const tasksToMove = this.tasks.filter((task) => !defaultIds.has(task.category));
+    const defaultManualColumns = getManualColumns(defaultColumns);
+    const defaultManualIds = new Set(defaultManualColumns.map((column) => column.id));
+    const defaultInbox = defaultManualColumns.find((column) => column.id === "inbox") || defaultManualColumns[0];
+    const tasksToMove = this.tasks.filter((task) => !defaultManualIds.has(task.category));
     this.dashboard.columns = defaultColumns;
     for (const task of tasksToMove) {
       task.category = defaultInbox.id;
@@ -368,8 +378,8 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
   async migrateColumnTasks(sourceId, targetId) {
     if (sourceId === targetId) return;
     const source = this.getColumn(sourceId);
-    const target = this.getColumn(targetId);
-    if (!source || !target) return;
+    const target = this.getManualColumn(targetId);
+    if (!source || !isManualColumn(source) || !target) return;
     const tasks = this.tasks.filter((task) => task.category === sourceId);
     for (const task of tasks) {
       task.category = targetId;
@@ -378,11 +388,17 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
   }
 
   async deleteColumn(sourceId, targetId) {
-    if (this.dashboard.columns.length <= 1) {
+    const source = this.getColumn(sourceId);
+    if (!source) return;
+    if (isManualColumn(source) && this.getManualColumns().length <= 1) {
       new Notice("At least one column is required.");
       return;
     }
-    await this.migrateColumnTasks(sourceId, targetId);
+    if (isManualColumn(source)) await this.migrateColumnTasks(sourceId, targetId);
+    if (isSmartColumn(source) && this.dashboard.columns.length <= 1) {
+      new Notice("At least one column is required.");
+      return;
+    }
     this.dashboard.columns = this.dashboard.columns.filter((column) => column.id !== sourceId);
     this.dashboard.today.taskIds = this.dashboard.today.taskIds.filter((id) => this.tasksById.has(id));
     await this.savePluginData();

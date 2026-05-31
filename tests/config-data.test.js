@@ -45,6 +45,7 @@ test("migrates legacy dashboard settings into config and task order into data", 
   assert.equal(config.dashboards[0].name, "Legacy Board");
   assert.equal(config.settings.completedTaskPolicy, "archive");
   assert.deepEqual(config.dashboards[0].columns.map((column) => column.id), ["gmail", "inbox"]);
+  assert.deepEqual(config.dashboards[0].columns.map((column) => column.type), ["manual", "manual"]);
   assert.equal(config.dashboards[0].columns.some((column) => Object.hasOwn(column, "taskIds")), false);
   assert.deepEqual(data.dashboards[0].today.taskIds, ["task-a", "task-b"]);
   assert.deepEqual(data.dashboards[0].columnTaskIds.gmail, ["task-c", "task-d"]);
@@ -65,6 +66,34 @@ test("normalizes duplicate config column ids and tags", () => {
 
   assert.deepEqual(config.dashboards[0].columns.map((column) => column.id), ["dup", "dup-2"]);
   assert.deepEqual(config.dashboards[0].columns.map((column) => column.categoryTag), ["#same", "#same-2"]);
+});
+
+test("normalizes default deadline as a smart column", () => {
+  const config = normalizeConfig({});
+  const deadline = config.dashboards[0].columns.find((column) => column.id === "deadline");
+  const data = normalizeData({}, config);
+  const dashboard = hydrateDashboard(config, data);
+
+  assert.equal(deadline.type, "smart");
+  assert.equal(deadline.smartType, "deadline");
+  assert.equal(Object.hasOwn(deadline, "categoryTag"), false);
+  assert.deepEqual(Object.keys(data.dashboards[0].columnTaskIds), ["high-priority", "prepare", "inbox"]);
+  assert.deepEqual(dashboard.columns.find((column) => column.id === "deadline").taskIds, []);
+});
+
+test("reserves legacy deadline tag for the smart deadline column", () => {
+  const config = normalizeConfig({
+    dashboards: [
+      {
+        columns: [
+          { id: "custom", name: "Custom", type: "manual", categoryTag: "#deadline", layoutGroup: "secondary" },
+          { id: "deadline", name: "Deadline", type: "smart", smartType: "deadline", layoutGroup: "primary" }
+        ]
+      }
+    ]
+  });
+
+  assert.equal(config.dashboards[0].columns.find((column) => column.id === "custom").categoryTag, "#deadline-2");
 });
 
 test("syncs dashboard config separately from runtime task order", () => {
@@ -93,7 +122,7 @@ test("syncs dashboard config separately from runtime task order", () => {
   syncConfigDataFromDashboard(config, data, dashboard);
 
   assert.deepEqual(config.dashboards[0].columns, [
-    { id: "inbox", name: "Inbox", categoryTag: "#inbox", layoutGroup: "primary" }
+    { id: "inbox", name: "Inbox", type: "manual", categoryTag: "#inbox", layoutGroup: "primary" }
   ]);
   assert.deepEqual(data.dashboards[0].today.taskIds, ["task-a"]);
   assert.deepEqual(data.dashboards[0].columnTaskIds, { inbox: ["task-b"] });

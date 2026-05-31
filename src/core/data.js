@@ -1,5 +1,5 @@
 const { DEFAULT_DATA, cloneDefault } = require("./defaults");
-const { normalizeColumns, stripColumnState } = require("../columns/column-model");
+const { getManualColumns, normalizeColumns, stripColumnState } = require("../columns/column-model");
 const { clean, uniqueIds } = require("../utils/text");
 
 function normalizeData(data, config) {
@@ -15,7 +15,7 @@ function normalizeData(data, config) {
   }
   const sourceColumnTaskIds = Object.assign({}, legacyTaskIds, sourceDashboard.columnTaskIds || {});
   const columnTaskIds = {};
-  for (const column of configDashboard.columns) {
+  for (const column of getManualColumns(configDashboard.columns)) {
     columnTaskIds[column.id] = uniqueIds(sourceColumnTaskIds[column.id]);
   }
 
@@ -69,7 +69,7 @@ function syncConfigDataFromDashboard(config, data, dashboard) {
     today: {
       taskIds: uniqueIds(dashboard.today?.taskIds)
     },
-    columnTaskIds: Object.fromEntries(columns.map((column) => [column.id, uniqueIds(column.taskIds)]))
+    columnTaskIds: Object.fromEntries(getManualColumns(columns).map((column) => [column.id, uniqueIds(column.taskIds)]))
   };
 }
 

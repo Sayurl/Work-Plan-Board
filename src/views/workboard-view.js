@@ -1,4 +1,5 @@
 const { ItemView } = require("obsidian");
+const { isManualColumn, isSmartColumn } = require("../columns/column-model");
 const { BOARD_VIEW, SIDEBAR_VIEW } = require("../core/constants");
 const { normalizeTag } = require("../utils/text");
 const { field } = require("../ui/controls");
@@ -77,6 +78,7 @@ class BoardView extends ItemView {
   renderColumn(parent, column) {
     const tasks = this.plugin.getTasksForColumn(column.id);
     const columnEl = parent.createDiv("ptb-column");
+    if (isSmartColumn(column)) columnEl.addClass("ptb-column-smart");
     columnEl.dataset.columnId = column.id;
     const header = columnEl.createDiv("ptb-column-header");
     const title = header.createDiv("ptb-column-title");
@@ -94,6 +96,7 @@ class BoardView extends ItemView {
     };
     title.createEl("h3", { text: column.name });
     title.createSpan({ text: String(tasks.length), cls: "ptb-count" });
+    if (isSmartColumn(column)) title.createSpan({ text: "Auto", cls: "ptb-chip" });
     const controls = header.createDiv("ptb-column-controls");
     controls.createEl("button", { text: "←", attr: { "aria-label": "Move column left" } }).onclick = async () => {
       await this.plugin.moveColumn(column.id, -1);
@@ -114,17 +117,22 @@ class BoardView extends ItemView {
     this.makeColumnTarget(columnEl, column);
     const list = columnEl.createDiv("ptb-card-list");
     list.dataset.column = column.id;
-    makeDropZone(list, async (taskId, targetId, placement) => {
-      const task = this.plugin.getTask(taskId);
-      if (!task) return;
-      if (task.category === column.id) {
-        await this.plugin.reorderTaskList(column.taskIds, taskId, targetId, placement);
-      } else {
-        await this.plugin.moveTaskToCategory(taskId, column.id, targetId, placement);
-      }
-    });
+    if (isManualColumn(column)) {
+      makeDropZone(list, async (taskId, targetId, placement) => {
+        const task = this.plugin.getTask(taskId);
+        if (!task) return;
+        if (task.category === column.id) {
+          await this.plugin.reorderTaskList(column.taskIds, taskId, targetId, placement);
+        } else {
+          await this.plugin.moveTaskToCategory(taskId, column.id, targetId, placement);
+        }
+      });
+    }
     for (const task of tasks) {
-      list.appendChild(renderTaskCard(this.plugin, task, { inToday: this.plugin.dashboard.today.taskIds.includes(task.id) }));
+      list.appendChild(renderTaskCard(this.plugin, task, {
+        inToday: this.plugin.dashboard.today.taskIds.includes(task.id),
+        disableDrop: isSmartColumn(column)
+      }));
     }
   }
 
@@ -260,17 +268,25 @@ class BoardView extends ItemView {
     }
     const editor = columnEl.createDiv("ptb-column-editor");
     const nameInput = field(editor, "Name", column.name);
-    const tagInput = field(editor, "Tag", column.categoryTag);
+    const tagInput = isManualColumn(column) ? field(editor, "Tag", column.categoryTag) : null;
+    if (isSmartColumn(column)) {
+      editor.createDiv({
+        text: column.smartType === "deadline" ? "Shows tasks with due dates automatically." : "Automatic column.",
+        cls: "ptb-column-editor-note"
+      });
+    }
     const row = editor.createDiv("ptb-column-editor-actions");
     row.createEl("button", { text: "Save" }).onclick = async () => {
       await this.plugin.renameColumn(column.id, nameInput.value);
-      const tag = normalizeTag(tagInput.value);
-      if (tag && tag !== column.categoryTag) {
-        await this.plugin.updateColumnTag(column.id, tag);
+      if (tagInput) {
+        const tag = normalizeTag(tagInput.value);
+        if (tag && tag !== column.categoryTag) {
+          await this.plugin.updateColumnTag(column.id, tag);
+        }
       }
     };
     row.createEl("button", { text: "Cancel" }).onclick = () => editor.remove();
-    if (this.plugin.dashboard.columns.length > 1) {
+    if (isManualColumn(column) && this.plugin.getManualColumns().length > 1) {
       const deleteBox = editor.createDiv("ptb-column-delete");
       deleteBox.createEl("label", { text: "Move tasks to" });
       const targetSelect = document.createElement("select");
@@ -283,6 +299,10 @@ class BoardView extends ItemView {
       deleteBox.appendChild(targetSelect);
       deleteBox.createEl("button", { text: "Delete Column", cls: "mod-warning" }).onclick = async () => {
         await this.plugin.deleteColumn(column.id, targetSelect.value);
+      };
+    } else if (isSmartColumn(column) && this.plugin.dashboard.columns.length > 1) {
+      row.createEl("button", { text: "Delete Column", cls: "mod-warning" }).onclick = async () => {
+        await this.plugin.deleteColumn(column.id, "");
       };
     }
   }

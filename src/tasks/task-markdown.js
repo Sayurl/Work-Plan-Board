@@ -1,5 +1,5 @@
 const { META_KEYS } = require("../core/constants");
-const { defaultColumnId, tagForCategory } = require("../columns/column-model");
+const { defaultColumnId, getManualColumns, tagForCategory } = require("../columns/column-model");
 const { clean } = require("../utils/text");
 const { normalizeSourceInput } = require("../utils/source-links");
 
@@ -19,11 +19,13 @@ function parseTaskBlock(filePath, blockLines, lineStart, lineEnd, columns, optio
   const id = meta[META_KEYS.id];
   if (!id) return null;
 
-  const categoryTagsByTag = new Map(columns.map((column) => [column.categoryTag, column.id]));
+  const categoryTagsByTag = new Map(getManualColumns(columns).map((column) => [column.categoryTag, column.id]));
+  const deprecatedTags = new Set(options.deprecatedCategoryTags || []);
   const bodyTags = [...rawBody.matchAll(/(^|\s)(#[\w-]+)/g)].map((item) => item[2]);
   const categoryTags = bodyTags.filter((tag) => categoryTagsByTag.has(tag));
   let category = categoryTags.length === 1 ? categoryTagsByTag.get(categoryTags[0]) : "";
   let unknownCategoryTag = "";
+  const deprecatedCategoryTags = bodyTags.filter((tag) => deprecatedTags.has(tag));
   if (!category && options.allowUnknownCategory) {
     unknownCategoryTag = bodyTags.find((tag) => tag !== "#project" && !categoryTagsByTag.has(tag)) || "";
     category = options.defaultCategory || defaultColumnId(columns);
@@ -47,6 +49,7 @@ function parseTaskBlock(filePath, blockLines, lineStart, lineEnd, columns, optio
     completed,
     category,
     unknownCategoryTag,
+    deprecatedCategoryTags,
     project,
     dueDate: due ? due[1] : "",
     estimate: estimate ? estimate[1] : "",

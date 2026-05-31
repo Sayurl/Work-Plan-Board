@@ -13,26 +13,28 @@ function renderTaskCard(plugin, task, options = {}) {
     event.dataTransfer.effectAllowed = "move";
   };
   card.ondragend = () => clearTaskDropIndicators(document);
-  card.ondragover = (event) => {
-    if (!hasTaskDrag(event.dataTransfer)) return;
-    event.preventDefault();
-    clearTaskDropIndicators(card.ownerDocument);
-    card.addClass(getVerticalPlacement(event, card) === "after" ? "is-task-drop-after" : "is-task-drop-before");
-  };
-  card.ondragleave = (event) => {
-    if (card.contains(event.relatedTarget)) return;
-    card.removeClass("is-task-drop-before");
-    card.removeClass("is-task-drop-after");
-  };
-  card.ondrop = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const droppedId = event.dataTransfer.getData("text/plain");
-    const placement = getVerticalPlacement(event, card);
-    clearTaskDropIndicators(card.ownerDocument);
-    const list = card.parentElement;
-    if (list) list.dispatchEvent(new CustomEvent("ptb-drop-task", { detail: { taskId: droppedId, targetId: task.id, placement } }));
-  };
+  if (!options.disableDrop) {
+    card.ondragover = (event) => {
+      if (!hasTaskDrag(event.dataTransfer)) return;
+      event.preventDefault();
+      clearTaskDropIndicators(card.ownerDocument);
+      card.addClass(getVerticalPlacement(event, card) === "after" ? "is-task-drop-after" : "is-task-drop-before");
+    };
+    card.ondragleave = (event) => {
+      if (card.contains(event.relatedTarget)) return;
+      card.removeClass("is-task-drop-before");
+      card.removeClass("is-task-drop-after");
+    };
+    card.ondrop = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const droppedId = event.dataTransfer.getData("text/plain");
+      const placement = getVerticalPlacement(event, card);
+      clearTaskDropIndicators(card.ownerDocument);
+      const list = card.parentElement;
+      if (list) list.dispatchEvent(new CustomEvent("ptb-drop-task", { detail: { taskId: droppedId, targetId: task.id, placement } }));
+    };
+  }
   card.onclick = (event) => {
     if (event.target.closest("button") || event.target.closest("a") || event.target.closest("summary")) return;
     const details = card.querySelector(".ptb-details");

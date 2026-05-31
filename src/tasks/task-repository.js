@@ -1,5 +1,5 @@
 const { Notice, TFile } = require("obsidian");
-const { defaultColumnId } = require("../columns/column-model");
+const { defaultColumnId, deprecatedCategoryTags } = require("../columns/column-model");
 const { ensureFile } = require("../utils/vault");
 const { parseTaskBlock, renderTaskMarkdown } = require("./task-markdown");
 
@@ -22,7 +22,10 @@ async function scanTasks(app, columns) {
         end += 1;
       }
 
-      const task = parseTaskBlock(file.path, lines.slice(index, end), index, end, columns);
+      const task = parseTaskBlock(file.path, lines.slice(index, end), index, end, columns, {
+        allowUnknownCategory: true,
+        defaultCategory: defaultColumnId(columns)
+      });
       if (!task || task.completed || seen.has(task.id)) {
         index = end - 1;
         continue;
@@ -88,6 +91,7 @@ async function processCompletedTasks(app, columns, policy) {
 async function reconcileInvalidTaskCategories(app, columns) {
   const fallbackCategory = defaultColumnId(columns);
   if (!fallbackCategory) return;
+  const deprecatedTags = deprecatedCategoryTags(columns);
   const taskFiles = app.vault
     .getMarkdownFiles()
     .filter((file) => file.name === "_Tasks.md");
@@ -104,9 +108,10 @@ async function reconcileInvalidTaskCategories(app, columns) {
       }
       const task = parseTaskBlock(file.path, lines.slice(index, end), index, end, columns, {
         allowUnknownCategory: true,
-        defaultCategory: fallbackCategory
+        defaultCategory: fallbackCategory,
+        deprecatedCategoryTags: deprecatedTags
       });
-      if (task?.unknownCategoryTag) {
+      if (task?.unknownCategoryTag || task?.deprecatedCategoryTags?.length) {
         const replacement = renderTaskMarkdown(task, columns).split("\n");
         lines.splice(index, end - index, ...replacement);
         end = index + replacement.length;
