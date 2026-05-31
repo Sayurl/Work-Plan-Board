@@ -1,5 +1,6 @@
 const { ItemView } = require("obsidian");
 const { SIDEBAR_VIEW } = require("../core/constants");
+const { renderActiveTaskActions } = require("../ui/task-actions");
 const { renderTaskCard } = require("../ui/task-card");
 const { renderTaskForm } = require("../ui/task-form");
 
@@ -41,6 +42,7 @@ class SidebarView extends ItemView {
       this.plugin.selectedTaskId = null;
       this.render();
     };
+    renderActiveTaskActions(this.plugin, buttonRow);
 
     if (this.plugin.selectedTaskId) {
       this.mode = "edit";

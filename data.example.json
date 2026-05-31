@@ -10,7 +10,9 @@
         "high-priority": [],
         "prepare": [],
         "inbox": []
-      }
+      },
+      "timeBlocks": [],
+      "taskTimeLinks": []
     }
   ],
   "selectedTaskId": ""

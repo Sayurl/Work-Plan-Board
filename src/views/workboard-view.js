@@ -1,8 +1,9 @@
 const { ItemView } = require("obsidian");
 const { isManualColumn, isSmartColumn } = require("../columns/column-model");
 const { BOARD_VIEW, SIDEBAR_VIEW } = require("../core/constants");
+const { TIME_BLOCK_RELATION_TYPES } = require("../planning/task-time-link-model");
 const { normalizeTag } = require("../utils/text");
-const { field } = require("../ui/controls");
+const { area, field } = require("../ui/controls");
 const { makeDropZone, getHorizontalPlacement, hasDragType } = require("../ui/drag-drop");
 const { renderTaskCard } = require("../ui/task-card");
 
@@ -10,6 +11,8 @@ class BoardView extends ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
+    this.isCreatingTimeBlock = false;
+    this.editingTimeBlockId = "";
   }
 
   getViewType() {
@@ -64,6 +67,14 @@ class BoardView extends ItemView {
     const header = columnEl.createDiv("ptb-column-header");
     header.createEl("h3", { text: "Today" });
     header.createSpan({ text: String(this.plugin.getTodayTasks().length), cls: "ptb-count" });
+    const controls = header.createDiv("ptb-column-controls");
+    controls.createEl("button", { text: "New Block" }).onclick = () => {
+      this.isCreatingTimeBlock = true;
+      this.editingTimeBlockId = "";
+      this.render();
+    };
+    this.renderTodayTimeline(columnEl);
+    columnEl.createEl("h4", { text: "Priority", cls: "ptb-subheading" });
     const list = columnEl.createDiv("ptb-card-list");
     list.dataset.list = "today";
     makeDropZone(list, async (taskId, targetId, placement) => {
@@ -73,6 +84,144 @@ class BoardView extends ItemView {
     for (const task of this.plugin.getTodayTasks()) {
       list.appendChild(renderTaskCard(this.plugin, task, { inToday: true }));
     }
+  }
+
+  renderTodayTimeline(parent) {
+    const section = parent.createDiv("ptb-timeline");
+    const title = section.createDiv("ptb-timeline-title");
+    title.createEl("h4", { text: "Timeline" });
+    title.createSpan({ text: this.plugin.getTodayDate(), cls: "ptb-chip" });
+
+    if (this.isCreatingTimeBlock) {
+      this.renderTimeBlockEditor(section, null);
+    }
+
+    const blocks = this.plugin.getTodayTimeBlocks();
+    if (blocks.length === 0 && !this.isCreatingTimeBlock) {
+      section.createDiv({ text: "No blocks today.", cls: "ptb-empty" });
+      return;
+    }
+
+    for (const block of blocks) {
+      if (this.editingTimeBlockId === block.id) {
+        this.renderTimeBlockEditor(section, block);
+      } else {
+        this.renderTimeBlock(section, block);
+      }
+    }
+  }
+
+  renderTimeBlock(parent, block) {
+    const linked = this.plugin.getLinkedTasksForTimeBlock(block.id);
+    const before = linked.filter((item) => item.link.relation === "before");
+    const inside = linked.filter((item) => item.link.relation === "inside");
+    const after = linked.filter((item) => item.link.relation === "after");
+    const related = linked.filter((item) => item.link.relation === "related");
+    const group = parent.createDiv("ptb-time-block-group");
+
+    this.renderTimeBlockLinks(group, before, block.id, "before");
+
+    const item = group.createDiv("ptb-time-block");
+    const top = item.createDiv("ptb-time-block-top");
+    top.createSpan({ text: `${block.startTime}-${block.endTime}`, cls: "ptb-time-block-time" });
+    top.createEl("strong", { text: block.title });
+    const actions = top.createDiv("ptb-time-block-actions");
+    actions.createEl("button", { text: "Edit" }).onclick = () => {
+      this.isCreatingTimeBlock = false;
+      this.editingTimeBlockId = block.id;
+      this.render();
+    };
+    actions.createEl("button", { text: "Delete", cls: "mod-warning" }).onclick = async () => {
+      await this.plugin.deleteTimeBlock(block.id);
+    };
+
+    if (block.location || block.notes) {
+      const meta = item.createDiv("ptb-time-block-meta");
+      if (block.location) meta.createSpan({ text: block.location, cls: "ptb-chip" });
+      if (block.notes) meta.createSpan({ text: block.notes, cls: "ptb-chip" });
+    }
+
+    this.renderTimeBlockLinks(item, inside, block.id, "inside");
+    this.renderTimeBlockLinks(item, related, block.id, "related");
+    this.renderTimeBlockLinker(item, block);
+    this.renderTimeBlockLinks(group, after, block.id, "after");
+  }
+
+  renderTimeBlockLinks(parent, linked, timeBlockId, relation) {
+    if (linked.length === 0) return;
+    const list = parent.createDiv(`ptb-time-block-links ptb-time-block-links-${relation}`);
+    for (const { link, task } of linked) {
+      const row = list.createDiv("ptb-time-block-link");
+      row.createSpan({ text: link.relation, cls: "ptb-chip" });
+      row.createSpan({ text: task.title });
+      row.createEl("button", { text: "Unlink" }).onclick = async () => {
+        await this.plugin.unlinkTaskFromTimeBlock(task.id, timeBlockId);
+      };
+    }
+  }
+
+  renderTimeBlockLinker(parent, block) {
+    const taskOptions = this.plugin.getTaskOptions().filter((task) => !this.plugin.getTaskTimeLinks(block.id).some((link) => link.taskId === task.id));
+    if (taskOptions.length === 0) return;
+    const row = parent.createDiv("ptb-time-block-linker");
+    const taskSelect = document.createElement("select");
+    for (const task of taskOptions) {
+      const option = document.createElement("option");
+      option.value = task.id;
+      option.text = task.name;
+      taskSelect.appendChild(option);
+    }
+    row.appendChild(taskSelect);
+    const relationSelect = document.createElement("select");
+    for (const relation of TIME_BLOCK_RELATION_TYPES) {
+      const option = document.createElement("option");
+      option.value = relation;
+      option.text = relation;
+      relationSelect.appendChild(option);
+    }
+    relationSelect.value = "inside";
+    row.appendChild(relationSelect);
+    row.createEl("button", { text: "Link" }).onclick = async () => {
+      await this.plugin.linkTaskToTimeBlock(taskSelect.value, block.id, relationSelect.value);
+    };
+  }
+
+  renderTimeBlockEditor(parent, block) {
+    const editor = parent.createDiv("ptb-time-block-editor");
+    const date = field(editor, "Date", block ? block.date : this.plugin.getTodayDate(), "date");
+    const title = field(editor, "Title", block ? block.title : "");
+    const startTime = field(editor, "Start", block ? block.startTime : this.plugin.config.timelineSettings.startTime, "time");
+    const endTime = field(editor, "End", block ? block.endTime : this.plugin.config.timelineSettings.endTime, "time");
+    const clampEndTime = () => {
+      if (startTime.value && endTime.value && endTime.value < startTime.value) {
+        endTime.value = startTime.value;
+      }
+    };
+    startTime.addEventListener("input", clampEndTime);
+    startTime.addEventListener("change", clampEndTime);
+    endTime.addEventListener("change", clampEndTime);
+    const location = field(editor, "Location", block ? block.location : "");
+    const notes = area(editor, "Notes", block ? block.notes : "");
+    const actions = editor.createDiv("ptb-time-block-editor-actions");
+    actions.createEl("button", { text: "Save", cls: "mod-cta" }).onclick = async () => {
+      const input = {
+        date: date.value,
+        title: title.value,
+        startTime: startTime.value,
+        endTime: endTime.value,
+        location: location.value,
+        notes: notes.value
+      };
+      this.isCreatingTimeBlock = false;
+      this.editingTimeBlockId = "";
+      if (block) await this.plugin.updateTimeBlock(block.id, input);
+      else await this.plugin.createTimeBlock(input);
+    };
+    actions.createEl("button", { text: "Cancel" }).onclick = () => {
+      this.isCreatingTimeBlock = false;
+      this.editingTimeBlockId = "";
+      this.render();
+    };
   }
 
   renderColumn(parent, column) {

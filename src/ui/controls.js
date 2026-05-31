@@ -4,6 +4,7 @@ function field(parent, label, value, type = "text") {
   const input = document.createElement("input");
   input.type = type;
   row.appendChild(input);
+  if (type === "time") input.step = "900";
   input.value = value || "";
   return input;
 }

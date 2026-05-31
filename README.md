@@ -12,7 +12,7 @@ This plugin is in early development. The current build is a local development ve
 
 Declarative board settings are stored as `config.json` inside the plugin folder. This includes manual column definitions, smart view definitions, completed task policy, and future timeline display settings. The file is intentionally ignored by Git in this repository because local workflows may contain personal naming, but it is designed so users can manage it with Git, Nix, or another declarative setup if desired.
 
-Vault-specific runtime state is stored by Obsidian as `data.json`. This includes Today task ordering, manual column task ordering, and selected UI state.
+Vault-specific runtime state is stored by Obsidian as `data.json`. This includes Today task ordering, manual column task ordering, time blocks, task-time links, and selected UI state.
 
 Use `config.example.json` and `data.example.json` as sanitized references for the expected structure.
 
@@ -27,6 +27,12 @@ When a column is deleted, choose another column as the destination. Tasks in the
 Resetting columns restores the default columns and moves tasks from custom columns to Inbox.
 
 Deadline is a smart view, not a manual category. Tasks with due dates are shown there automatically, sorted by the nearest due date, while their manual category remains High Priority, Prepare, Inbox, or another user-defined manual column.
+
+## Today Timeline
+
+Today includes a timeline for fixed time blocks such as meetings, site visits, travel, and planned work sessions.
+
+Time blocks are stored in `data.json`. Tasks can be linked to a time block as `inside`, `before`, `after`, or `related`; the task remains in its normal planning column while the link gives the schedule context.
 
 ## Development Install
 

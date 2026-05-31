@@ -105,6 +105,12 @@ test("syncs dashboard config separately from runtime task order", () => {
         today: { name: "Today", layoutGroup: "primary" },
         columns: [
           { id: "inbox", name: "Inbox", categoryTag: "#inbox", layoutGroup: "secondary" }
+        ],
+        timeBlocks: [
+          { id: "block-a", title: "Meeting", date: "2026-06-01", startTime: "10:00", endTime: "11:00" }
+        ],
+        taskTimeLinks: [
+          { taskId: "task-b", timeBlockId: "block-a", relation: "inside", syncDate: true }
         ]
       }
     ]
@@ -116,6 +122,12 @@ test("syncs dashboard config separately from runtime task order", () => {
     today: { name: "Today", layoutGroup: "primary", taskIds: ["task-a"] },
     columns: [
       { id: "inbox", name: "Inbox", categoryTag: "#inbox", layoutGroup: "primary", taskIds: ["task-b"] }
+    ],
+    timeBlocks: [
+      { id: "block-a", title: "Meeting", date: "2026-06-01", startTime: "10:00", endTime: "11:00" }
+    ],
+    taskTimeLinks: [
+      { taskId: "task-b", timeBlockId: "block-a", relation: "inside", syncDate: true }
     ]
   };
 
@@ -126,4 +138,10 @@ test("syncs dashboard config separately from runtime task order", () => {
   ]);
   assert.deepEqual(data.dashboards[0].today.taskIds, ["task-a"]);
   assert.deepEqual(data.dashboards[0].columnTaskIds, { inbox: ["task-b"] });
+  assert.deepEqual(data.dashboards[0].timeBlocks, [
+    { id: "block-a", title: "Meeting", date: "2026-06-01", startTime: "10:00", endTime: "11:00", location: "", notes: "" }
+  ]);
+  assert.deepEqual(data.dashboards[0].taskTimeLinks, [
+    { taskId: "task-b", timeBlockId: "block-a", relation: "inside", syncDate: true }
+  ]);
 });

@@ -1,4 +1,6 @@
 const { isSmartColumn, normalizeColumns } = require("../columns/column-model");
+const { normalizeTaskTimeLinks } = require("../planning/task-time-link-model");
+const { normalizeTimeBlocks } = require("../planning/time-block-model");
 const { uniqueIds } = require("../utils/text");
 
 function reconcileDashboard(dashboard, tasks) {
@@ -11,6 +13,11 @@ function reconcileDashboard(dashboard, tasks) {
 
   dashboard.today.taskIds = uniqueIds(dashboard.today.taskIds).filter((id) => ids.has(id));
   dashboard.columns = normalizeColumns(dashboard.columns);
+  dashboard.timeBlocks = normalizeTimeBlocks(dashboard.timeBlocks);
+  dashboard.taskTimeLinks = normalizeTaskTimeLinks(dashboard.taskTimeLinks, {
+    taskIds: ids,
+    timeBlockIds: new Set(dashboard.timeBlocks.map((block) => block.id))
+  });
 
   for (const column of dashboard.columns) {
     if (isSmartColumn(column) && column.smartType === "deadline") {

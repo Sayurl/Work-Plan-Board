@@ -6,6 +6,8 @@ const { hydrateDashboard, normalizeData, syncConfigDataFromDashboard } = require
 const { reconcileDashboard } = require("./core/reconcile");
 const { getManualColumns, isManualColumn, isSmartColumn, normalizeColumns } = require("./columns/column-model");
 const { moveColumnInList, moveColumnToGroupEnd: moveColumnToGroupEndInList, moveColumnToTarget } = require("./columns/column-service");
+const { normalizeRelation } = require("./planning/task-time-link-model");
+const { getTimeBlocksForDate, makeTimeBlockId, normalizeTimeBlock, todayString } = require("./planning/time-block-model");
 const { TaskBoardSettingTab } = require("./settings/setting-tab");
 const { appendTask, processCompletedTasks, reconcileInvalidTaskCategories, scanTasks, writeTask } = require("./tasks/task-repository");
 const { addTaskToToday, removeTaskFromToday, reorderTaskList: reorderTaskIds } = require("./today/today-service");
@@ -23,6 +25,8 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     this.tasks = [];
     this.tasksById = new Map();
     this.selectedTaskId = this.data.selectedTaskId || null;
+    this.activeTaskId = null;
+    this.expandedTaskId = null;
     this.refreshPromise = null;
 
     await this.savePluginData();
@@ -91,6 +95,8 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
       const parsed = await scanTasks(this.app, this.dashboard.columns);
       this.tasks = parsed.tasks;
       this.tasksById = new Map(this.tasks.map((task) => [task.id, task]));
+      if (this.activeTaskId && !this.tasksById.has(this.activeTaskId)) this.activeTaskId = null;
+      if (this.expandedTaskId && !this.tasksById.has(this.expandedTaskId)) this.expandedTaskId = null;
       reconcileDashboard(this.dashboard, this.tasks);
       await this.savePluginData();
       this.renderViews();
@@ -122,6 +128,17 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     return this.tasksById.get(taskId);
   }
 
+  getActiveTask() {
+    return this.activeTaskId ? this.getTask(this.activeTaskId) : null;
+  }
+
+  toggleTaskDetails(taskId) {
+    if (!this.tasksById.has(taskId)) return;
+    this.activeTaskId = taskId;
+    this.expandedTaskId = this.expandedTaskId === taskId ? null : taskId;
+    this.renderViews();
+  }
+
   getTasksForColumn(columnId) {
     const column = this.dashboard.columns.find((item) => item.id === columnId);
     if (!column) return [];
@@ -130,6 +147,35 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
 
   getTodayTasks() {
     return this.dashboard.today.taskIds.map((id) => this.getTask(id)).filter(Boolean);
+  }
+
+  getTodayDate() {
+    return todayString();
+  }
+
+  getTodayTimeBlocks() {
+    return getTimeBlocksForDate(this.dashboard.timeBlocks, this.getTodayDate());
+  }
+
+  getTimeBlock(timeBlockId) {
+    return (this.dashboard.timeBlocks || []).find((block) => block.id === timeBlockId);
+  }
+
+  getTaskTimeLinks(timeBlockId) {
+    return (this.dashboard.taskTimeLinks || []).filter((link) => link.timeBlockId === timeBlockId);
+  }
+
+  getLinkedTasksForTimeBlock(timeBlockId) {
+    return this.getTaskTimeLinks(timeBlockId)
+      .map((link) => ({ link, task: this.getTask(link.taskId) }))
+      .filter((item) => item.task);
+  }
+
+  getTaskOptions() {
+    return this.tasks
+      .slice()
+      .sort((a, b) => a.title.localeCompare(b.title))
+      .map((task) => ({ id: task.id, name: task.title }));
   }
 
   async addToToday(taskId) {
@@ -245,6 +291,75 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
       await this.savePluginData();
     }
     await this.refreshTasks();
+  }
+
+  async createTimeBlock(input) {
+    this.dashboard.timeBlocks = Array.isArray(this.dashboard.timeBlocks) ? this.dashboard.timeBlocks : [];
+    const block = normalizeTimeBlock({
+      id: makeTimeBlockId(),
+      title: input.title,
+      date: input.date || this.getTodayDate(),
+      startTime: input.startTime,
+      endTime: input.endTime,
+      location: input.location,
+      notes: input.notes
+    });
+    this.dashboard.timeBlocks.push(block);
+    await this.savePluginData();
+    this.renderViews();
+    return block;
+  }
+
+  async updateTimeBlock(timeBlockId, input) {
+    const block = this.getTimeBlock(timeBlockId);
+    if (!block) return null;
+    const usedIds = new Set(this.dashboard.timeBlocks.filter((item) => item.id !== timeBlockId).map((item) => item.id));
+    Object.assign(block, normalizeTimeBlock({
+      ...block,
+      title: input.title,
+      date: input.date,
+      startTime: input.startTime,
+      endTime: input.endTime,
+      location: input.location,
+      notes: input.notes
+    }, usedIds));
+    await this.savePluginData();
+    this.renderViews();
+    return block;
+  }
+
+  async deleteTimeBlock(timeBlockId) {
+    this.dashboard.timeBlocks = Array.isArray(this.dashboard.timeBlocks) ? this.dashboard.timeBlocks : [];
+    this.dashboard.taskTimeLinks = Array.isArray(this.dashboard.taskTimeLinks) ? this.dashboard.taskTimeLinks : [];
+    this.dashboard.timeBlocks = this.dashboard.timeBlocks.filter((block) => block.id !== timeBlockId);
+    this.dashboard.taskTimeLinks = this.dashboard.taskTimeLinks.filter((link) => link.timeBlockId !== timeBlockId);
+    await this.savePluginData();
+    this.renderViews();
+  }
+
+  async linkTaskToTimeBlock(taskId, timeBlockId, relation = "related") {
+    if (!this.tasksById.has(taskId) || !this.getTimeBlock(timeBlockId)) return;
+    this.dashboard.taskTimeLinks = Array.isArray(this.dashboard.taskTimeLinks) ? this.dashboard.taskTimeLinks : [];
+    const existing = this.dashboard.taskTimeLinks.find((link) => link.taskId === taskId && link.timeBlockId === timeBlockId);
+    if (existing) {
+      existing.relation = normalizeRelation(relation);
+    } else {
+      this.dashboard.taskTimeLinks.push({
+        taskId,
+        timeBlockId,
+        relation: normalizeRelation(relation),
+        syncDate: false
+      });
+    }
+    await this.savePluginData();
+    this.renderViews();
+  }
+
+  async unlinkTaskFromTimeBlock(taskId, timeBlockId) {
+    this.dashboard.taskTimeLinks = Array.isArray(this.dashboard.taskTimeLinks) ? this.dashboard.taskTimeLinks : [];
+    this.dashboard.taskTimeLinks = this.dashboard.taskTimeLinks.filter((link) => !(link.taskId === taskId && link.timeBlockId === timeBlockId));
+    await this.savePluginData();
+    this.renderViews();
   }
 
   async resolveTaskFilePath(input) {

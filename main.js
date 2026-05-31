@@ -74,7 +74,9 @@ var require_defaults = __commonJS({
           today: {
             taskIds: []
           },
-          columnTaskIds: {}
+          columnTaskIds: {},
+          timeBlocks: [],
+          taskTimeLinks: []
         }
       ],
       selectedTaskId: ""
@@ -383,11 +385,140 @@ var require_config = __commonJS({
   }
 });
 
+// src/planning/task-time-link-model.js
+var require_task_time_link_model = __commonJS({
+  "src/planning/task-time-link-model.js"(exports2, module2) {
+    var { clean: clean2 } = require_text();
+    var TIME_BLOCK_RELATION_TYPES = ["before", "inside", "after", "related"];
+    var DEFAULT_TASK_TIME_LINK = {
+      taskId: "",
+      timeBlockId: "",
+      relation: "related",
+      syncDate: false
+    };
+    function normalizeTaskTimeLinks(links, options = {}) {
+      const taskIds = options.taskIds || null;
+      const timeBlockIds = options.timeBlockIds || null;
+      const seen = /* @__PURE__ */ new Set();
+      const normalized = [];
+      for (const link of Array.isArray(links) ? links : []) {
+        const taskId = clean2(link == null ? void 0 : link.taskId);
+        const timeBlockId = clean2(link == null ? void 0 : link.timeBlockId);
+        if (!taskId || !timeBlockId) continue;
+        if (taskIds && !taskIds.has(taskId)) continue;
+        if (timeBlockIds && !timeBlockIds.has(timeBlockId)) continue;
+        const key = `${taskId}:${timeBlockId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        normalized.push({
+          taskId,
+          timeBlockId,
+          relation: normalizeRelation2(link == null ? void 0 : link.relation),
+          syncDate: Boolean(link == null ? void 0 : link.syncDate)
+        });
+      }
+      return normalized;
+    }
+    function normalizeRelation2(value) {
+      return TIME_BLOCK_RELATION_TYPES.includes(value) ? value : DEFAULT_TASK_TIME_LINK.relation;
+    }
+    module2.exports = {
+      TIME_BLOCK_RELATION_TYPES,
+      normalizeTaskTimeLinks,
+      normalizeRelation: normalizeRelation2,
+      DEFAULT_TASK_TIME_LINK
+    };
+  }
+});
+
+// src/planning/time-block-model.js
+var require_time_block_model = __commonJS({
+  "src/planning/time-block-model.js"(exports2, module2) {
+    var { clean: clean2 } = require_text();
+    function makeTimeBlockId2(date = /* @__PURE__ */ new Date()) {
+      const pad = (number) => String(number).padStart(2, "0");
+      const stamp = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+      const random = Math.random().toString(16).slice(2, 8);
+      return `time_${stamp}_${random}`;
+    }
+    function todayString2(date = /* @__PURE__ */ new Date()) {
+      const pad = (number) => String(number).padStart(2, "0");
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    }
+    function normalizeTimeBlocks(blocks) {
+      const usedIds = /* @__PURE__ */ new Set();
+      return (Array.isArray(blocks) ? blocks : []).map((block, index) => normalizeTimeBlock2(block, usedIds, index));
+    }
+    function normalizeTimeBlock2(block, usedIds = /* @__PURE__ */ new Set(), index = 0) {
+      const startTime = normalizeTime(block == null ? void 0 : block.startTime, "09:00");
+      return {
+        id: uniqueTimeBlockId(clean2(block == null ? void 0 : block.id) || `time-block-${index + 1}`, usedIds),
+        title: clean2(block == null ? void 0 : block.title) || "Untitled block",
+        date: normalizeDate(block == null ? void 0 : block.date),
+        startTime,
+        endTime: normalizeEndTime(startTime, block == null ? void 0 : block.endTime),
+        location: clean2(block == null ? void 0 : block.location),
+        notes: clean2(block == null ? void 0 : block.notes)
+      };
+    }
+    function getTimeBlocksForDate2(timeBlocks, date) {
+      return normalizeTimeBlocks(timeBlocks).filter((block) => block.date === date).sort(compareTimeBlocks);
+    }
+    function compareTimeBlocks(a, b) {
+      const date = a.date.localeCompare(b.date);
+      if (date !== 0) return date;
+      const start = a.startTime.localeCompare(b.startTime);
+      if (start !== 0) return start;
+      const end = a.endTime.localeCompare(b.endTime);
+      if (end !== 0) return end;
+      return a.title.localeCompare(b.title);
+    }
+    function normalizeDate(value) {
+      const date = clean2(value);
+      return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : todayString2();
+    }
+    function normalizeTime(value, fallback) {
+      const time = clean2(value);
+      return /^([01]\d|2[0-3]):[0-5]\d$/.test(time) ? time : fallback;
+    }
+    function normalizeEndTime(startTime, value) {
+      const endTime = normalizeTime(value, "10:00");
+      return endTime > startTime ? endTime : addMinutes(startTime, 60);
+    }
+    function addMinutes(time, minutes) {
+      const [hours, mins] = time.split(":").map(Number);
+      const total = Math.min(23 * 60 + 59, hours * 60 + mins + minutes);
+      const pad = (number) => String(number).padStart(2, "0");
+      return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+    }
+    function uniqueTimeBlockId(baseId, usedIds) {
+      let id = baseId;
+      let index = 2;
+      while (usedIds.has(id)) {
+        id = `${baseId}-${index}`;
+        index += 1;
+      }
+      usedIds.add(id);
+      return id;
+    }
+    module2.exports = {
+      makeTimeBlockId: makeTimeBlockId2,
+      todayString: todayString2,
+      normalizeTimeBlocks,
+      normalizeTimeBlock: normalizeTimeBlock2,
+      getTimeBlocksForDate: getTimeBlocksForDate2,
+      compareTimeBlocks
+    };
+  }
+});
+
 // src/core/data.js
 var require_data = __commonJS({
   "src/core/data.js"(exports2, module2) {
     var { DEFAULT_DATA, cloneDefault } = require_defaults();
     var { getManualColumns: getManualColumns2, normalizeColumns: normalizeColumns2, stripColumnState } = require_column_model();
+    var { normalizeTaskTimeLinks } = require_task_time_link_model();
+    var { normalizeTimeBlocks } = require_time_block_model();
     var { clean: clean2, uniqueIds } = require_text();
     function normalizeData2(data, config) {
       var _a;
@@ -404,6 +535,8 @@ var require_data = __commonJS({
       for (const column of getManualColumns2(configDashboard.columns)) {
         columnTaskIds[column.id] = uniqueIds(sourceColumnTaskIds[column.id]);
       }
+      const timeBlocks = normalizeTimeBlocks(sourceDashboard.timeBlocks);
+      const timeBlockIds = new Set(timeBlocks.map((block) => block.id));
       return {
         dataVersion: 1,
         dashboards: [
@@ -412,7 +545,9 @@ var require_data = __commonJS({
             today: {
               taskIds: uniqueIds((_a = sourceDashboard.today) == null ? void 0 : _a.taskIds)
             },
-            columnTaskIds
+            columnTaskIds,
+            timeBlocks,
+            taskTimeLinks: normalizeTaskTimeLinks(sourceDashboard.taskTimeLinks, { timeBlockIds })
           }
         ],
         selectedTaskId: clean2((data == null ? void 0 : data.selectedTaskId) || defaults.selectedTaskId)
@@ -429,6 +564,7 @@ var require_data = __commonJS({
           taskIds: uniqueIds((_a2 = dataDashboard.columnTaskIds) == null ? void 0 : _a2[column.id])
         };
       });
+      const timeBlocks = normalizeTimeBlocks(dataDashboard.timeBlocks);
       return {
         id: configDashboard.id,
         name: configDashboard.name,
@@ -437,12 +573,17 @@ var require_data = __commonJS({
           layoutGroup: configDashboard.today.layoutGroup,
           taskIds: uniqueIds((_a = dataDashboard.today) == null ? void 0 : _a.taskIds)
         },
-        columns: normalizeColumns2(hydratedColumns, configDashboard.columns)
+        columns: normalizeColumns2(hydratedColumns, configDashboard.columns),
+        timeBlocks,
+        taskTimeLinks: normalizeTaskTimeLinks(dataDashboard.taskTimeLinks, {
+          timeBlockIds: new Set(timeBlocks.map((block) => block.id))
+        })
       };
     }
     function syncConfigDataFromDashboard2(config, data, dashboard) {
       var _a, _b, _c;
       const columns = normalizeColumns2(dashboard.columns, config.dashboards[0].columns);
+      const timeBlocks = normalizeTimeBlocks(dashboard.timeBlocks);
       config.dashboards[0] = {
         id: clean2(dashboard.id) || config.dashboards[0].id,
         name: clean2(dashboard.name) || config.dashboards[0].name,
@@ -457,7 +598,11 @@ var require_data = __commonJS({
         today: {
           taskIds: uniqueIds((_c = dashboard.today) == null ? void 0 : _c.taskIds)
         },
-        columnTaskIds: Object.fromEntries(getManualColumns2(columns).map((column) => [column.id, uniqueIds(column.taskIds)]))
+        columnTaskIds: Object.fromEntries(getManualColumns2(columns).map((column) => [column.id, uniqueIds(column.taskIds)])),
+        timeBlocks,
+        taskTimeLinks: normalizeTaskTimeLinks(dashboard.taskTimeLinks, {
+          timeBlockIds: new Set(timeBlocks.map((block) => block.id))
+        })
       };
     }
     module2.exports = {
@@ -472,6 +617,8 @@ var require_data = __commonJS({
 var require_reconcile = __commonJS({
   "src/core/reconcile.js"(exports2, module2) {
     var { isSmartColumn: isSmartColumn2, normalizeColumns: normalizeColumns2 } = require_column_model();
+    var { normalizeTaskTimeLinks } = require_task_time_link_model();
+    var { normalizeTimeBlocks } = require_time_block_model();
     var { uniqueIds } = require_text();
     function reconcileDashboard2(dashboard, tasks) {
       const ids = new Set(tasks.map((task) => task.id));
@@ -482,6 +629,11 @@ var require_reconcile = __commonJS({
       }
       dashboard.today.taskIds = uniqueIds(dashboard.today.taskIds).filter((id) => ids.has(id));
       dashboard.columns = normalizeColumns2(dashboard.columns);
+      dashboard.timeBlocks = normalizeTimeBlocks(dashboard.timeBlocks);
+      dashboard.taskTimeLinks = normalizeTaskTimeLinks(dashboard.taskTimeLinks, {
+        taskIds: ids,
+        timeBlockIds: new Set(dashboard.timeBlocks.map((block) => block.id))
+      });
       for (const column of dashboard.columns) {
         if (isSmartColumn2(column) && column.smartType === "deadline") {
           column.taskIds = tasks.filter((task) => task.dueDate).sort(compareDeadlineTasks).map((task) => task.id);
@@ -1081,6 +1233,7 @@ var require_controls = __commonJS({
       const input = document.createElement("input");
       input.type = type;
       row.appendChild(input);
+      if (type === "time") input.step = "900";
       input.value = value || "";
       return input;
     }
@@ -1232,6 +1385,7 @@ var require_task_card = __commonJS({
     function renderTaskCard(plugin, task, options = {}) {
       const card = document.createElement("div");
       card.className = `ptb-card${task.completed ? " is-completed" : ""}`;
+      if (plugin.activeTaskId === task.id) card.addClass("is-active");
       card.draggable = true;
       card.dataset.taskId = task.id;
       card.ondragstart = (event) => {
@@ -1263,8 +1417,12 @@ var require_task_card = __commonJS({
       }
       card.onclick = (event) => {
         if (event.target.closest("button") || event.target.closest("a") || event.target.closest("summary")) return;
-        const details = card.querySelector(".ptb-details");
-        if (details) details.open = !details.open;
+        plugin.toggleTaskDetails(task.id);
+      };
+      card.ondblclick = (event) => {
+        if (event.target.closest("button") || event.target.closest("a") || event.target.closest("summary")) return;
+        event.preventDefault();
+        plugin.selectTask(task.id);
       };
       const top = card.createDiv("ptb-card-top");
       const checkbox = document.createElement("input");
@@ -1283,8 +1441,17 @@ var require_task_card = __commonJS({
       if (task.estimate) meta.createSpan({ text: task.estimate, cls: "ptb-chip" });
       if (task.waitingFor) meta.createSpan({ text: task.waitingFor, cls: "ptb-chip" });
       if (task.followUpDate) meta.createSpan({ text: `Check ${task.followUpDate}`, cls: "ptb-chip" });
+      if (task.source) {
+        const sourceButton = meta.createEl("button", { text: "Note", cls: "ptb-chip ptb-chip-button ptb-source-button" });
+        sourceButton.setAttribute("title", displaySourceLabel(task.source) || "Source note");
+        sourceButton.onclick = (event) => {
+          event.stopPropagation();
+          plugin.openSource(task);
+        };
+      }
       if (task.nextAction || task.goal || task.comment || task.source || options.compact) {
         const details = card.createEl("details", { cls: "ptb-details" });
+        details.open = plugin.expandedTaskId === task.id;
         details.createEl("summary", { text: "Details" });
         if (task.nextAction) details.createEl("p", { text: `Next: ${task.nextAction}` });
         if (task.goal) details.createEl("p", { text: `Goal: ${task.goal}` });
@@ -1294,38 +1461,6 @@ var require_task_card = __commonJS({
           details.createEl("p", { text: "No details yet." });
         }
       }
-      const actions = card.createDiv("ptb-card-actions");
-      const editButton = actions.createEl("button", { text: "Edit" });
-      editButton.onclick = (event) => {
-        event.stopPropagation();
-        plugin.selectTask(task.id);
-      };
-      if (task.source) {
-        const sourceButton = actions.createEl("button", { text: displaySourceLabel(task.source) || "Source" });
-        sourceButton.addClass("ptb-source-button");
-        sourceButton.onclick = (event) => {
-          event.stopPropagation();
-          plugin.openSource(task);
-        };
-      }
-      if (options.inToday) {
-        const remove = actions.createEl("button", { text: "Remove Today" });
-        remove.onclick = (event) => {
-          event.stopPropagation();
-          plugin.removeFromToday(task.id);
-        };
-      } else {
-        const add = actions.createEl("button", { text: "Add Today" });
-        add.onclick = (event) => {
-          event.stopPropagation();
-          plugin.addToToday(task.id);
-        };
-      }
-      const fileButton = actions.createEl("button", { text: "File" });
-      fileButton.onclick = (event) => {
-        event.stopPropagation();
-        plugin.openTaskFile(task);
-      };
       return card;
     }
     module2.exports = {
@@ -1340,14 +1475,17 @@ var require_workboard_view = __commonJS({
     var { ItemView } = require("obsidian");
     var { isManualColumn: isManualColumn2, isSmartColumn: isSmartColumn2 } = require_column_model();
     var { BOARD_VIEW: BOARD_VIEW2, SIDEBAR_VIEW: SIDEBAR_VIEW2 } = require_constants();
+    var { TIME_BLOCK_RELATION_TYPES } = require_task_time_link_model();
     var { normalizeTag: normalizeTag2 } = require_text();
-    var { field } = require_controls();
+    var { area, field } = require_controls();
     var { makeDropZone, getHorizontalPlacement, hasDragType } = require_drag_drop();
     var { renderTaskCard } = require_task_card();
     var BoardView2 = class extends ItemView {
       constructor(leaf, plugin) {
         super(leaf);
         this.plugin = plugin;
+        this.isCreatingTimeBlock = false;
+        this.editingTimeBlockId = "";
       }
       getViewType() {
         return BOARD_VIEW2;
@@ -1394,6 +1532,14 @@ var require_workboard_view = __commonJS({
         const header = columnEl.createDiv("ptb-column-header");
         header.createEl("h3", { text: "Today" });
         header.createSpan({ text: String(this.plugin.getTodayTasks().length), cls: "ptb-count" });
+        const controls = header.createDiv("ptb-column-controls");
+        controls.createEl("button", { text: "New Block" }).onclick = () => {
+          this.isCreatingTimeBlock = true;
+          this.editingTimeBlockId = "";
+          this.render();
+        };
+        this.renderTodayTimeline(columnEl);
+        columnEl.createEl("h4", { text: "Priority", cls: "ptb-subheading" });
         const list = columnEl.createDiv("ptb-card-list");
         list.dataset.list = "today";
         makeDropZone(list, async (taskId, targetId, placement) => {
@@ -1403,6 +1549,132 @@ var require_workboard_view = __commonJS({
         for (const task of this.plugin.getTodayTasks()) {
           list.appendChild(renderTaskCard(this.plugin, task, { inToday: true }));
         }
+      }
+      renderTodayTimeline(parent) {
+        const section = parent.createDiv("ptb-timeline");
+        const title = section.createDiv("ptb-timeline-title");
+        title.createEl("h4", { text: "Timeline" });
+        title.createSpan({ text: this.plugin.getTodayDate(), cls: "ptb-chip" });
+        if (this.isCreatingTimeBlock) {
+          this.renderTimeBlockEditor(section, null);
+        }
+        const blocks = this.plugin.getTodayTimeBlocks();
+        if (blocks.length === 0 && !this.isCreatingTimeBlock) {
+          section.createDiv({ text: "No blocks today.", cls: "ptb-empty" });
+          return;
+        }
+        for (const block of blocks) {
+          if (this.editingTimeBlockId === block.id) {
+            this.renderTimeBlockEditor(section, block);
+          } else {
+            this.renderTimeBlock(section, block);
+          }
+        }
+      }
+      renderTimeBlock(parent, block) {
+        const linked = this.plugin.getLinkedTasksForTimeBlock(block.id);
+        const before = linked.filter((item2) => item2.link.relation === "before");
+        const inside = linked.filter((item2) => item2.link.relation === "inside");
+        const after = linked.filter((item2) => item2.link.relation === "after");
+        const related = linked.filter((item2) => item2.link.relation === "related");
+        const group = parent.createDiv("ptb-time-block-group");
+        this.renderTimeBlockLinks(group, before, block.id, "before");
+        const item = group.createDiv("ptb-time-block");
+        const top = item.createDiv("ptb-time-block-top");
+        top.createSpan({ text: `${block.startTime}-${block.endTime}`, cls: "ptb-time-block-time" });
+        top.createEl("strong", { text: block.title });
+        const actions = top.createDiv("ptb-time-block-actions");
+        actions.createEl("button", { text: "Edit" }).onclick = () => {
+          this.isCreatingTimeBlock = false;
+          this.editingTimeBlockId = block.id;
+          this.render();
+        };
+        actions.createEl("button", { text: "Delete", cls: "mod-warning" }).onclick = async () => {
+          await this.plugin.deleteTimeBlock(block.id);
+        };
+        if (block.location || block.notes) {
+          const meta = item.createDiv("ptb-time-block-meta");
+          if (block.location) meta.createSpan({ text: block.location, cls: "ptb-chip" });
+          if (block.notes) meta.createSpan({ text: block.notes, cls: "ptb-chip" });
+        }
+        this.renderTimeBlockLinks(item, inside, block.id, "inside");
+        this.renderTimeBlockLinks(item, related, block.id, "related");
+        this.renderTimeBlockLinker(item, block);
+        this.renderTimeBlockLinks(group, after, block.id, "after");
+      }
+      renderTimeBlockLinks(parent, linked, timeBlockId, relation) {
+        if (linked.length === 0) return;
+        const list = parent.createDiv(`ptb-time-block-links ptb-time-block-links-${relation}`);
+        for (const { link, task } of linked) {
+          const row = list.createDiv("ptb-time-block-link");
+          row.createSpan({ text: link.relation, cls: "ptb-chip" });
+          row.createSpan({ text: task.title });
+          row.createEl("button", { text: "Unlink" }).onclick = async () => {
+            await this.plugin.unlinkTaskFromTimeBlock(task.id, timeBlockId);
+          };
+        }
+      }
+      renderTimeBlockLinker(parent, block) {
+        const taskOptions = this.plugin.getTaskOptions().filter((task) => !this.plugin.getTaskTimeLinks(block.id).some((link) => link.taskId === task.id));
+        if (taskOptions.length === 0) return;
+        const row = parent.createDiv("ptb-time-block-linker");
+        const taskSelect = document.createElement("select");
+        for (const task of taskOptions) {
+          const option = document.createElement("option");
+          option.value = task.id;
+          option.text = task.name;
+          taskSelect.appendChild(option);
+        }
+        row.appendChild(taskSelect);
+        const relationSelect = document.createElement("select");
+        for (const relation of TIME_BLOCK_RELATION_TYPES) {
+          const option = document.createElement("option");
+          option.value = relation;
+          option.text = relation;
+          relationSelect.appendChild(option);
+        }
+        relationSelect.value = "inside";
+        row.appendChild(relationSelect);
+        row.createEl("button", { text: "Link" }).onclick = async () => {
+          await this.plugin.linkTaskToTimeBlock(taskSelect.value, block.id, relationSelect.value);
+        };
+      }
+      renderTimeBlockEditor(parent, block) {
+        const editor = parent.createDiv("ptb-time-block-editor");
+        const date = field(editor, "Date", block ? block.date : this.plugin.getTodayDate(), "date");
+        const title = field(editor, "Title", block ? block.title : "");
+        const startTime = field(editor, "Start", block ? block.startTime : this.plugin.config.timelineSettings.startTime, "time");
+        const endTime = field(editor, "End", block ? block.endTime : this.plugin.config.timelineSettings.endTime, "time");
+        const clampEndTime = () => {
+          if (startTime.value && endTime.value && endTime.value < startTime.value) {
+            endTime.value = startTime.value;
+          }
+        };
+        startTime.addEventListener("input", clampEndTime);
+        startTime.addEventListener("change", clampEndTime);
+        endTime.addEventListener("change", clampEndTime);
+        const location = field(editor, "Location", block ? block.location : "");
+        const notes = area(editor, "Notes", block ? block.notes : "");
+        const actions = editor.createDiv("ptb-time-block-editor-actions");
+        actions.createEl("button", { text: "Save", cls: "mod-cta" }).onclick = async () => {
+          const input = {
+            date: date.value,
+            title: title.value,
+            startTime: startTime.value,
+            endTime: endTime.value,
+            location: location.value,
+            notes: notes.value
+          };
+          this.isCreatingTimeBlock = false;
+          this.editingTimeBlockId = "";
+          if (block) await this.plugin.updateTimeBlock(block.id, input);
+          else await this.plugin.createTimeBlock(input);
+        };
+        actions.createEl("button", { text: "Cancel" }).onclick = () => {
+          this.isCreatingTimeBlock = false;
+          this.editingTimeBlockId = "";
+          this.render();
+        };
       }
       renderColumn(parent, column) {
         const tasks = this.plugin.getTasksForColumn(column.id);
@@ -1633,6 +1905,32 @@ var require_workboard_view = __commonJS({
   }
 });
 
+// src/ui/task-actions.js
+var require_task_actions = __commonJS({
+  "src/ui/task-actions.js"(exports2, module2) {
+    function renderActiveTaskActions(plugin, parent) {
+      const task = plugin.getActiveTask();
+      if (!task) return;
+      const actions = parent.createDiv("ptb-active-task-actions");
+      actions.createSpan({ text: task.title, cls: "ptb-active-task-label" });
+      actions.createEl("button", { text: "Edit" }).onclick = () => {
+        plugin.selectTask(task.id);
+      };
+      const inToday = plugin.dashboard.today.taskIds.includes(task.id);
+      actions.createEl("button", { text: inToday ? "Remove Today" : "Add Today" }).onclick = async () => {
+        if (inToday) await plugin.removeFromToday(task.id);
+        else await plugin.addToToday(task.id);
+      };
+      actions.createEl("button", { text: "File" }).onclick = async () => {
+        await plugin.openTaskFile(task);
+      };
+    }
+    module2.exports = {
+      renderActiveTaskActions
+    };
+  }
+});
+
 // src/ui/task-form.js
 var require_task_form = __commonJS({
   "src/ui/task-form.js"(exports2, module2) {
@@ -1713,6 +2011,7 @@ var require_sidebar_view = __commonJS({
   "src/views/sidebar-view.js"(exports2, module2) {
     var { ItemView } = require("obsidian");
     var { SIDEBAR_VIEW: SIDEBAR_VIEW2 } = require_constants();
+    var { renderActiveTaskActions } = require_task_actions();
     var { renderTaskCard } = require_task_card();
     var { renderTaskForm } = require_task_form();
     var SidebarView2 = class extends ItemView {
@@ -1748,6 +2047,7 @@ var require_sidebar_view = __commonJS({
           this.plugin.selectedTaskId = null;
           this.render();
         };
+        renderActiveTaskActions(this.plugin, buttonRow);
         if (this.plugin.selectedTaskId) {
           this.mode = "edit";
         }
@@ -1829,6 +2129,8 @@ var { hydrateDashboard, normalizeData, syncConfigDataFromDashboard } = require_d
 var { reconcileDashboard } = require_reconcile();
 var { getManualColumns, isManualColumn, isSmartColumn, normalizeColumns } = require_column_model();
 var { moveColumnInList, moveColumnToGroupEnd: moveColumnToGroupEndInList, moveColumnToTarget } = require_column_service();
+var { normalizeRelation } = require_task_time_link_model();
+var { getTimeBlocksForDate, makeTimeBlockId, normalizeTimeBlock, todayString } = require_time_block_model();
 var { TaskBoardSettingTab } = require_setting_tab();
 var { appendTask, processCompletedTasks, reconcileInvalidTaskCategories, scanTasks, writeTask } = require_task_repository();
 var { addTaskToToday, removeTaskFromToday, reorderTaskList: reorderTaskIds } = require_today_service();
@@ -1845,6 +2147,8 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     this.tasks = [];
     this.tasksById = /* @__PURE__ */ new Map();
     this.selectedTaskId = this.data.selectedTaskId || null;
+    this.activeTaskId = null;
+    this.expandedTaskId = null;
     this.refreshPromise = null;
     await this.savePluginData();
     this.registerView(BOARD_VIEW, (leaf) => new BoardView(leaf, this));
@@ -1903,6 +2207,8 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
       const parsed = await scanTasks(this.app, this.dashboard.columns);
       this.tasks = parsed.tasks;
       this.tasksById = new Map(this.tasks.map((task) => [task.id, task]));
+      if (this.activeTaskId && !this.tasksById.has(this.activeTaskId)) this.activeTaskId = null;
+      if (this.expandedTaskId && !this.tasksById.has(this.expandedTaskId)) this.expandedTaskId = null;
       reconcileDashboard(this.dashboard, this.tasks);
       await this.savePluginData();
       this.renderViews();
@@ -1930,6 +2236,15 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
   getTask(taskId) {
     return this.tasksById.get(taskId);
   }
+  getActiveTask() {
+    return this.activeTaskId ? this.getTask(this.activeTaskId) : null;
+  }
+  toggleTaskDetails(taskId) {
+    if (!this.tasksById.has(taskId)) return;
+    this.activeTaskId = taskId;
+    this.expandedTaskId = this.expandedTaskId === taskId ? null : taskId;
+    this.renderViews();
+  }
   getTasksForColumn(columnId) {
     const column = this.dashboard.columns.find((item) => item.id === columnId);
     if (!column) return [];
@@ -1937,6 +2252,24 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
   }
   getTodayTasks() {
     return this.dashboard.today.taskIds.map((id) => this.getTask(id)).filter(Boolean);
+  }
+  getTodayDate() {
+    return todayString();
+  }
+  getTodayTimeBlocks() {
+    return getTimeBlocksForDate(this.dashboard.timeBlocks, this.getTodayDate());
+  }
+  getTimeBlock(timeBlockId) {
+    return (this.dashboard.timeBlocks || []).find((block) => block.id === timeBlockId);
+  }
+  getTaskTimeLinks(timeBlockId) {
+    return (this.dashboard.taskTimeLinks || []).filter((link) => link.timeBlockId === timeBlockId);
+  }
+  getLinkedTasksForTimeBlock(timeBlockId) {
+    return this.getTaskTimeLinks(timeBlockId).map((link) => ({ link, task: this.getTask(link.taskId) })).filter((item) => item.task);
+  }
+  getTaskOptions() {
+    return this.tasks.slice().sort((a, b) => a.title.localeCompare(b.title)).map((task) => ({ id: task.id, name: task.title }));
   }
   async addToToday(taskId) {
     if (!this.tasksById.has(taskId)) return;
@@ -2037,6 +2370,70 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
       await this.savePluginData();
     }
     await this.refreshTasks();
+  }
+  async createTimeBlock(input) {
+    this.dashboard.timeBlocks = Array.isArray(this.dashboard.timeBlocks) ? this.dashboard.timeBlocks : [];
+    const block = normalizeTimeBlock({
+      id: makeTimeBlockId(),
+      title: input.title,
+      date: input.date || this.getTodayDate(),
+      startTime: input.startTime,
+      endTime: input.endTime,
+      location: input.location,
+      notes: input.notes
+    });
+    this.dashboard.timeBlocks.push(block);
+    await this.savePluginData();
+    this.renderViews();
+    return block;
+  }
+  async updateTimeBlock(timeBlockId, input) {
+    const block = this.getTimeBlock(timeBlockId);
+    if (!block) return null;
+    const usedIds = new Set(this.dashboard.timeBlocks.filter((item) => item.id !== timeBlockId).map((item) => item.id));
+    Object.assign(block, normalizeTimeBlock({
+      ...block,
+      title: input.title,
+      date: input.date,
+      startTime: input.startTime,
+      endTime: input.endTime,
+      location: input.location,
+      notes: input.notes
+    }, usedIds));
+    await this.savePluginData();
+    this.renderViews();
+    return block;
+  }
+  async deleteTimeBlock(timeBlockId) {
+    this.dashboard.timeBlocks = Array.isArray(this.dashboard.timeBlocks) ? this.dashboard.timeBlocks : [];
+    this.dashboard.taskTimeLinks = Array.isArray(this.dashboard.taskTimeLinks) ? this.dashboard.taskTimeLinks : [];
+    this.dashboard.timeBlocks = this.dashboard.timeBlocks.filter((block) => block.id !== timeBlockId);
+    this.dashboard.taskTimeLinks = this.dashboard.taskTimeLinks.filter((link) => link.timeBlockId !== timeBlockId);
+    await this.savePluginData();
+    this.renderViews();
+  }
+  async linkTaskToTimeBlock(taskId, timeBlockId, relation = "related") {
+    if (!this.tasksById.has(taskId) || !this.getTimeBlock(timeBlockId)) return;
+    this.dashboard.taskTimeLinks = Array.isArray(this.dashboard.taskTimeLinks) ? this.dashboard.taskTimeLinks : [];
+    const existing = this.dashboard.taskTimeLinks.find((link) => link.taskId === taskId && link.timeBlockId === timeBlockId);
+    if (existing) {
+      existing.relation = normalizeRelation(relation);
+    } else {
+      this.dashboard.taskTimeLinks.push({
+        taskId,
+        timeBlockId,
+        relation: normalizeRelation(relation),
+        syncDate: false
+      });
+    }
+    await this.savePluginData();
+    this.renderViews();
+  }
+  async unlinkTaskFromTimeBlock(taskId, timeBlockId) {
+    this.dashboard.taskTimeLinks = Array.isArray(this.dashboard.taskTimeLinks) ? this.dashboard.taskTimeLinks : [];
+    this.dashboard.taskTimeLinks = this.dashboard.taskTimeLinks.filter((link) => !(link.taskId === taskId && link.timeBlockId === timeBlockId));
+    await this.savePluginData();
+    this.renderViews();
   }
   async resolveTaskFilePath(input) {
     const selectedFolder = clean(input.project);

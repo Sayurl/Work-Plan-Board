@@ -1,5 +1,7 @@
 const { DEFAULT_DATA, cloneDefault } = require("./defaults");
 const { getManualColumns, normalizeColumns, stripColumnState } = require("../columns/column-model");
+const { normalizeTaskTimeLinks } = require("../planning/task-time-link-model");
+const { normalizeTimeBlocks } = require("../planning/time-block-model");
 const { clean, uniqueIds } = require("../utils/text");
 
 function normalizeData(data, config) {
@@ -18,6 +20,8 @@ function normalizeData(data, config) {
   for (const column of getManualColumns(configDashboard.columns)) {
     columnTaskIds[column.id] = uniqueIds(sourceColumnTaskIds[column.id]);
   }
+  const timeBlocks = normalizeTimeBlocks(sourceDashboard.timeBlocks);
+  const timeBlockIds = new Set(timeBlocks.map((block) => block.id));
 
   return {
     dataVersion: 1,
@@ -27,7 +31,9 @@ function normalizeData(data, config) {
         today: {
           taskIds: uniqueIds(sourceDashboard.today?.taskIds)
         },
-        columnTaskIds
+        columnTaskIds,
+        timeBlocks,
+        taskTimeLinks: normalizeTaskTimeLinks(sourceDashboard.taskTimeLinks, { timeBlockIds })
       }
     ],
     selectedTaskId: clean(data?.selectedTaskId || defaults.selectedTaskId)
@@ -41,6 +47,7 @@ function hydrateDashboard(config, data) {
     ...column,
     taskIds: uniqueIds(dataDashboard.columnTaskIds?.[column.id])
   }));
+  const timeBlocks = normalizeTimeBlocks(dataDashboard.timeBlocks);
   return {
     id: configDashboard.id,
     name: configDashboard.name,
@@ -49,12 +56,17 @@ function hydrateDashboard(config, data) {
       layoutGroup: configDashboard.today.layoutGroup,
       taskIds: uniqueIds(dataDashboard.today?.taskIds)
     },
-    columns: normalizeColumns(hydratedColumns, configDashboard.columns)
+    columns: normalizeColumns(hydratedColumns, configDashboard.columns),
+    timeBlocks,
+    taskTimeLinks: normalizeTaskTimeLinks(dataDashboard.taskTimeLinks, {
+      timeBlockIds: new Set(timeBlocks.map((block) => block.id))
+    })
   };
 }
 
 function syncConfigDataFromDashboard(config, data, dashboard) {
   const columns = normalizeColumns(dashboard.columns, config.dashboards[0].columns);
+  const timeBlocks = normalizeTimeBlocks(dashboard.timeBlocks);
   config.dashboards[0] = {
     id: clean(dashboard.id) || config.dashboards[0].id,
     name: clean(dashboard.name) || config.dashboards[0].name,
@@ -69,7 +81,11 @@ function syncConfigDataFromDashboard(config, data, dashboard) {
     today: {
       taskIds: uniqueIds(dashboard.today?.taskIds)
     },
-    columnTaskIds: Object.fromEntries(getManualColumns(columns).map((column) => [column.id, uniqueIds(column.taskIds)]))
+    columnTaskIds: Object.fromEntries(getManualColumns(columns).map((column) => [column.id, uniqueIds(column.taskIds)])),
+    timeBlocks,
+    taskTimeLinks: normalizeTaskTimeLinks(dashboard.taskTimeLinks, {
+      timeBlockIds: new Set(timeBlocks.map((block) => block.id))
+    })
   };
 }
 

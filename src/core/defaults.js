@@ -39,7 +39,9 @@ const DEFAULT_DATA = {
       today: {
         taskIds: []
       },
-      columnTaskIds: {}
+      columnTaskIds: {},
+      timeBlocks: [],
+      taskTimeLinks: []
     }
   ],
   selectedTaskId: ""

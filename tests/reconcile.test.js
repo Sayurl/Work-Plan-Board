@@ -33,6 +33,14 @@ test("reconciles Today and column task ids against scanned tasks", () => {
         layoutGroup: "secondary",
         taskIds: []
       }
+    ],
+    timeBlocks: [
+      { id: "block-a", title: "Meeting", date: "2026-06-01", startTime: "10:00", endTime: "11:00" }
+    ],
+    taskTimeLinks: [
+      { taskId: "task-a", timeBlockId: "block-a", relation: "inside" },
+      { taskId: "missing", timeBlockId: "block-a", relation: "inside" },
+      { taskId: "task-a", timeBlockId: "missing", relation: "inside" }
     ]
   };
   const tasks = [
@@ -47,4 +55,7 @@ test("reconciles Today and column task ids against scanned tasks", () => {
   assert.deepEqual(dashboard.columns.find((column) => column.id === "high-priority").taskIds, ["task-b", "task-a"]);
   assert.deepEqual(dashboard.columns.find((column) => column.id === "deadline").taskIds, ["task-c", "task-a"]);
   assert.deepEqual(dashboard.columns.find((column) => column.id === "inbox").taskIds, ["task-c"]);
+  assert.deepEqual(dashboard.taskTimeLinks, [
+    { taskId: "task-a", timeBlockId: "block-a", relation: "inside", syncDate: false }
+  ]);
 });
