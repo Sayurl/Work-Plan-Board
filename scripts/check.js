@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 const root = path.resolve(__dirname, "..");
-const targets = [path.join(root, "main.js"), path.join(root, "scripts"), path.join(root, "src")];
+const targets = [path.join(root, "main.js"), path.join(root, "scripts"), path.join(root, "src"), path.join(root, "tests")];
 const files = [];
 
 for (const target of targets) collectJsFiles(target, files);
