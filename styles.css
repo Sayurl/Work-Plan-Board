@@ -395,6 +395,25 @@
   font-size: 12px;
 }
 
+.ptb-icon-button {
+  align-items: center;
+  display: inline-flex;
+  gap: 5px;
+  justify-content: center;
+  min-width: 0;
+}
+
+.ptb-icon-button svg {
+  flex: 0 0 auto;
+  height: 14px;
+  width: 14px;
+}
+
+.ptb-icon-button span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .ptb-card-actions button {
   font-size: 11px;
   line-height: 1.2;
@@ -474,6 +493,12 @@
   padding: 12px;
 }
 
+.ptb-sidebar *,
+.ptb-sidebar *::before,
+.ptb-sidebar *::after {
+  box-sizing: border-box;
+}
+
 .ptb-sidebar-header {
   align-items: flex-start;
   flex-wrap: wrap;
@@ -525,6 +550,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .ptb-form h4 {
@@ -548,6 +575,8 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .ptb-form-row label {
@@ -563,6 +592,7 @@
 .ptb-form-row input,
 .ptb-form-row select,
 .ptb-form-row textarea {
+  min-width: 0;
   width: 100%;
 }
 
@@ -581,6 +611,32 @@
   flex: 0 0 auto;
   min-height: 28px;
   padding: 0 8px;
+}
+
+.ptb-source-note-panel {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 7px;
+}
+
+.ptb-source-current-button {
+  align-self: flex-start;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 3px 8px;
+}
+
+.ptb-form-note {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .ptb-search-results {

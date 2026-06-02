@@ -1934,6 +1934,7 @@ var require_task_actions = __commonJS({
 // src/ui/task-form.js
 var require_task_form = __commonJS({
   "src/ui/task-form.js"(exports2, module2) {
+    var { setIcon } = require("obsidian");
     var { defaultColumnId } = require_column_model();
     var { normalizeSourceInput: normalizeSourceInput2, sourceToInputValue } = require_source_links();
     var { area, field, searchField, selectField } = require_controls();
@@ -1958,17 +1959,22 @@ var require_task_form = __commonJS({
       });
       if (!task) {
         const activeSource = plugin.getActiveSourceLink();
-        const sourceRow = el.createDiv("ptb-form-row ptb-checkbox-row");
-        const sourceCheck = document.createElement("input");
-        sourceCheck.type = "checkbox";
-        sourceRow.appendChild(sourceCheck);
-        sourceCheck.checked = Boolean(activeSource);
-        sourceRow.createEl("label", { text: "Use active note as source" });
-        if (activeSource) fields.source.value = activeSource;
-        sourceCheck.onchange = () => {
-          fields.source.value = sourceCheck.checked ? activeSource : "";
+        const sourcePanel = el.createDiv("ptb-source-note-panel");
+        const sourceButton = sourcePanel.createEl("button", {
+          cls: "ptb-icon-button ptb-source-current-button",
+          attr: { type: "button" }
+        });
+        setIcon(sourceButton, "link");
+        sourceButton.createSpan({ text: "Set Current Note as Source" });
+        sourceButton.disabled = !activeSource;
+        sourceButton.onclick = () => {
+          if (!activeSource) return;
+          fields.source.value = activeSource;
         };
-        fields.useSource = sourceCheck;
+        const sourceHelp = activeSource ? "Uses the open note as this task's source." : "Open a note to use it as this task's source.";
+        sourcePanel.createDiv({ text: sourceHelp, cls: "ptb-form-note" });
+        if (activeSource) fields.source.value = activeSource;
+        fields.usesActiveSource = () => Boolean(activeSource && fields.source.value.trim() === activeSource);
       }
       fields.nextAction = area(el, "Next action", task ? task.nextAction : "");
       fields.waitingFor = field(el, "Waiting for", task ? task.waitingFor : "");
@@ -1992,7 +1998,7 @@ var require_task_form = __commonJS({
             followUpDate: fields.followUpDate.value,
             goal: fields.goal.value,
             comment: fields.comment.value,
-            useSource: fields.useSource ? fields.useSource.checked : Boolean(fields.source.value)
+            useSource: fields.usesActiveSource ? fields.usesActiveSource() : Boolean(fields.source.value)
           };
         }
       };
@@ -2009,7 +2015,7 @@ var require_task_form = __commonJS({
 // src/views/sidebar-view.js
 var require_sidebar_view = __commonJS({
   "src/views/sidebar-view.js"(exports2, module2) {
-    var { ItemView } = require("obsidian");
+    var { ItemView, setIcon } = require("obsidian");
     var { SIDEBAR_VIEW: SIDEBAR_VIEW2 } = require_constants();
     var { renderActiveTaskActions } = require_task_actions();
     var { renderTaskCard } = require_task_card();
@@ -2037,6 +2043,13 @@ var require_sidebar_view = __commonJS({
         const header = container.createDiv("ptb-sidebar-header");
         header.createEl("h3", { text: "Tasks" });
         const buttonRow = header.createDiv("ptb-sidebar-actions");
+        const refreshButton = buttonRow.createEl("button", {
+          cls: "ptb-icon-button",
+          attr: { type: "button", "aria-label": "Refresh tasks" }
+        });
+        setIcon(refreshButton, "refresh-cw");
+        refreshButton.createSpan({ text: "Refresh" });
+        refreshButton.onclick = () => this.plugin.refreshTasks();
         buttonRow.createEl("button", { text: "Columns" }).onclick = () => {
           this.mode = "focus";
           this.plugin.selectedTaskId = null;

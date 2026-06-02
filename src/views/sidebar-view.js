@@ -1,4 +1,4 @@
-const { ItemView } = require("obsidian");
+const { ItemView, setIcon } = require("obsidian");
 const { SIDEBAR_VIEW } = require("../core/constants");
 const { renderActiveTaskActions } = require("../ui/task-actions");
 const { renderTaskCard } = require("../ui/task-card");
@@ -32,6 +32,13 @@ class SidebarView extends ItemView {
     const header = container.createDiv("ptb-sidebar-header");
     header.createEl("h3", { text: "Tasks" });
     const buttonRow = header.createDiv("ptb-sidebar-actions");
+    const refreshButton = buttonRow.createEl("button", {
+      cls: "ptb-icon-button",
+      attr: { type: "button", "aria-label": "Refresh tasks" }
+    });
+    setIcon(refreshButton, "refresh-cw");
+    refreshButton.createSpan({ text: "Refresh" });
+    refreshButton.onclick = () => this.plugin.refreshTasks();
     buttonRow.createEl("button", { text: "Columns" }).onclick = () => {
       this.mode = "focus";
       this.plugin.selectedTaskId = null;

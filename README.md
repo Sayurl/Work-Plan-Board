@@ -34,6 +34,10 @@ Today includes a timeline for fixed time blocks such as meetings, site visits, t
 
 Time blocks are stored in `data.json`. Tasks can be linked to a time block as `inside`, `before`, `after`, or `related`; the task remains in its normal planning column while the link gives the schedule context.
 
+## Sidebar
+
+The task sidebar provides quick access to refresh, column focus, new task creation, and actions for the selected task.
+
 ## Development Install
 
 Clone this repository into your vault's community plugin folder:

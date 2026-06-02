@@ -1,3 +1,4 @@
+const { setIcon } = require("obsidian");
 const { defaultColumnId } = require("../columns/column-model");
 const { normalizeSourceInput, sourceToInputValue } = require("../utils/source-links");
 const { area, field, searchField, selectField } = require("./controls");
@@ -24,17 +25,24 @@ function renderTaskForm(plugin, task) {
   });
   if (!task) {
     const activeSource = plugin.getActiveSourceLink();
-    const sourceRow = el.createDiv("ptb-form-row ptb-checkbox-row");
-    const sourceCheck = document.createElement("input");
-    sourceCheck.type = "checkbox";
-    sourceRow.appendChild(sourceCheck);
-    sourceCheck.checked = Boolean(activeSource);
-    sourceRow.createEl("label", { text: "Use active note as source" });
-    if (activeSource) fields.source.value = activeSource;
-    sourceCheck.onchange = () => {
-      fields.source.value = sourceCheck.checked ? activeSource : "";
+    const sourcePanel = el.createDiv("ptb-source-note-panel");
+    const sourceButton = sourcePanel.createEl("button", {
+      cls: "ptb-icon-button ptb-source-current-button",
+      attr: { type: "button" }
+    });
+    setIcon(sourceButton, "link");
+    sourceButton.createSpan({ text: "Set Current Note as Source" });
+    sourceButton.disabled = !activeSource;
+    sourceButton.onclick = () => {
+      if (!activeSource) return;
+      fields.source.value = activeSource;
     };
-    fields.useSource = sourceCheck;
+    const sourceHelp = activeSource
+      ? "Uses the open note as this task's source."
+      : "Open a note to use it as this task's source.";
+    sourcePanel.createDiv({ text: sourceHelp, cls: "ptb-form-note" });
+    if (activeSource) fields.source.value = activeSource;
+    fields.usesActiveSource = () => Boolean(activeSource && fields.source.value.trim() === activeSource);
   }
   fields.nextAction = area(el, "Next action", task ? task.nextAction : "");
   fields.waitingFor = field(el, "Waiting for", task ? task.waitingFor : "");
@@ -59,7 +67,7 @@ function renderTaskForm(plugin, task) {
         followUpDate: fields.followUpDate.value,
         goal: fields.goal.value,
         comment: fields.comment.value,
-        useSource: fields.useSource ? fields.useSource.checked : Boolean(fields.source.value)
+        useSource: fields.usesActiveSource ? fields.usesActiveSource() : Boolean(fields.source.value)
       };
     }
   };
