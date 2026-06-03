@@ -1,4 +1,4 @@
-const { ItemView } = require("obsidian");
+const { ItemView, Notice, setIcon } = require("obsidian");
 const { isManualColumn, isSmartColumn } = require("../columns/column-model");
 const { BOARD_VIEW, SIDEBAR_VIEW } = require("../core/constants");
 const { TIME_BLOCK_RELATION_TYPES } = require("../planning/task-time-link-model");
@@ -6,6 +6,7 @@ const { normalizeTag } = require("../utils/text");
 const { area, field } = require("../ui/controls");
 const { makeDropZone, getHorizontalPlacement, hasDragType } = require("../ui/drag-drop");
 const { renderTaskCard } = require("../ui/task-card");
+const { extractFirstUrl } = require("../utils/urls");
 
 class BoardView extends ItemView {
   constructor(leaf, plugin) {
@@ -137,7 +138,7 @@ class BoardView extends ItemView {
 
     if (block.location || block.notes) {
       const meta = item.createDiv("ptb-time-block-meta");
-      if (block.location) meta.createSpan({ text: block.location, cls: "ptb-chip" });
+      if (block.location) this.renderTimeBlockLocation(meta, block.location);
       if (block.notes) meta.createSpan({ text: block.notes, cls: "ptb-chip" });
     }
 
@@ -145,6 +146,35 @@ class BoardView extends ItemView {
     this.renderTimeBlockLinks(item, related, block.id, "related");
     this.renderTimeBlockLinker(item, block);
     this.renderTimeBlockLinks(group, after, block.id, "after");
+  }
+
+  renderTimeBlockLocation(parent, location) {
+    const wrap = parent.createDiv("ptb-time-block-location");
+    const url = extractFirstUrl(location);
+    if (url) {
+      const link = wrap.createEl("a", {
+        text: location,
+        cls: "ptb-time-block-location-text",
+        attr: { href: url, target: "_blank", rel: "noopener" }
+      });
+      link.onclick = (event) => event.stopPropagation();
+    } else {
+      wrap.createSpan({ text: location, cls: "ptb-time-block-location-text" });
+    }
+    const copyButton = wrap.createEl("button", {
+      cls: "ptb-icon-button ptb-location-copy-button",
+      attr: { type: "button", "aria-label": "Copy location" }
+    });
+    setIcon(copyButton, "copy");
+    copyButton.onclick = async (event) => {
+      event.stopPropagation();
+      try {
+        await navigator.clipboard.writeText(location);
+        new Notice("Location copied.");
+      } catch (error) {
+        new Notice("Could not copy location.");
+      }
+    };
   }
 
   renderTimeBlockLinks(parent, linked, timeBlockId, relation) {

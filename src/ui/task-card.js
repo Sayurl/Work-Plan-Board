@@ -1,3 +1,4 @@
+const { MarkdownRenderer } = require("obsidian");
 const { categoryName } = require("../columns/column-model");
 const { displayPathLabel, displaySourceLabel } = require("../utils/source-links");
 const { clearTaskDropIndicators, getVerticalPlacement, hasTaskDrag } = require("./drag-drop");
@@ -79,7 +80,7 @@ function renderTaskCard(plugin, task, options = {}) {
     details.createEl("summary", { text: "Details" });
     if (task.nextAction) details.createEl("p", { text: `Next: ${task.nextAction}` });
     if (task.goal) details.createEl("p", { text: `Goal: ${task.goal}` });
-    if (task.comment) details.createEl("p", { text: `Comment: ${task.comment}` });
+    if (task.comment) renderMarkdownDetail(plugin, task, details, "Comment", task.comment);
     if (task.source) details.createEl("p", { text: `Source: ${displaySourceLabel(task.source)}` });
     if (!task.nextAction && !task.goal && !task.comment && !task.source) {
       details.createEl("p", { text: "No details yet." });
@@ -87,6 +88,13 @@ function renderTaskCard(plugin, task, options = {}) {
   }
 
   return card;
+}
+
+function renderMarkdownDetail(plugin, task, parent, label, markdown) {
+  const section = parent.createDiv("ptb-markdown-detail");
+  section.createEl("strong", { text: `${label}:` });
+  const content = section.createDiv("ptb-markdown-content");
+  MarkdownRenderer.render(plugin.app, markdown, content, task.filePath || "", plugin);
 }
 
 module.exports = {

@@ -34,6 +34,10 @@ Today includes a timeline for fixed time blocks such as meetings, site visits, t
 
 Time blocks are stored in `data.json`. Tasks can be linked to a time block as `inside`, `before`, `after`, or `related`; the task remains in its normal planning column while the link gives the schedule context.
 
+Time block locations can contain regular text or a web meeting URL. URLs are shown as external links, and the location can be copied from the time block card.
+
+Task comments are rendered as Markdown in task details.
+
 ## Sidebar
 
 The task sidebar provides quick access to refresh, column focus, new task creation, and actions for the selected task.

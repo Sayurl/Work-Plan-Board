@@ -1379,6 +1379,7 @@ var require_drag_drop = __commonJS({
 // src/ui/task-card.js
 var require_task_card = __commonJS({
   "src/ui/task-card.js"(exports2, module2) {
+    var { MarkdownRenderer } = require("obsidian");
     var { categoryName } = require_column_model();
     var { displayPathLabel, displaySourceLabel } = require_source_links();
     var { clearTaskDropIndicators, getVerticalPlacement, hasTaskDrag } = require_drag_drop();
@@ -1455,7 +1456,7 @@ var require_task_card = __commonJS({
         details.createEl("summary", { text: "Details" });
         if (task.nextAction) details.createEl("p", { text: `Next: ${task.nextAction}` });
         if (task.goal) details.createEl("p", { text: `Goal: ${task.goal}` });
-        if (task.comment) details.createEl("p", { text: `Comment: ${task.comment}` });
+        if (task.comment) renderMarkdownDetail(plugin, task, details, "Comment", task.comment);
         if (task.source) details.createEl("p", { text: `Source: ${displaySourceLabel(task.source)}` });
         if (!task.nextAction && !task.goal && !task.comment && !task.source) {
           details.createEl("p", { text: "No details yet." });
@@ -1463,8 +1464,29 @@ var require_task_card = __commonJS({
       }
       return card;
     }
+    function renderMarkdownDetail(plugin, task, parent, label, markdown) {
+      const section = parent.createDiv("ptb-markdown-detail");
+      section.createEl("strong", { text: `${label}:` });
+      const content = section.createDiv("ptb-markdown-content");
+      MarkdownRenderer.render(plugin.app, markdown, content, task.filePath || "", plugin);
+    }
     module2.exports = {
       renderTaskCard
+    };
+  }
+});
+
+// src/utils/urls.js
+var require_urls = __commonJS({
+  "src/utils/urls.js"(exports2, module2) {
+    function extractFirstUrl(value) {
+      if (typeof value !== "string") return "";
+      const match = value.match(/\bhttps?:\/\/[^\s<>"')\]]+/i);
+      if (!match) return "";
+      return match[0].replace(/[.,;:!?]+$/, "");
+    }
+    module2.exports = {
+      extractFirstUrl
     };
   }
 });
@@ -1472,7 +1494,7 @@ var require_task_card = __commonJS({
 // src/views/workboard-view.js
 var require_workboard_view = __commonJS({
   "src/views/workboard-view.js"(exports2, module2) {
-    var { ItemView } = require("obsidian");
+    var { ItemView, Notice: Notice2, setIcon } = require("obsidian");
     var { isManualColumn: isManualColumn2, isSmartColumn: isSmartColumn2 } = require_column_model();
     var { BOARD_VIEW: BOARD_VIEW2, SIDEBAR_VIEW: SIDEBAR_VIEW2 } = require_constants();
     var { TIME_BLOCK_RELATION_TYPES } = require_task_time_link_model();
@@ -1480,6 +1502,7 @@ var require_workboard_view = __commonJS({
     var { area, field } = require_controls();
     var { makeDropZone, getHorizontalPlacement, hasDragType } = require_drag_drop();
     var { renderTaskCard } = require_task_card();
+    var { extractFirstUrl } = require_urls();
     var BoardView2 = class extends ItemView {
       constructor(leaf, plugin) {
         super(leaf);
@@ -1594,13 +1617,41 @@ var require_workboard_view = __commonJS({
         };
         if (block.location || block.notes) {
           const meta = item.createDiv("ptb-time-block-meta");
-          if (block.location) meta.createSpan({ text: block.location, cls: "ptb-chip" });
+          if (block.location) this.renderTimeBlockLocation(meta, block.location);
           if (block.notes) meta.createSpan({ text: block.notes, cls: "ptb-chip" });
         }
         this.renderTimeBlockLinks(item, inside, block.id, "inside");
         this.renderTimeBlockLinks(item, related, block.id, "related");
         this.renderTimeBlockLinker(item, block);
         this.renderTimeBlockLinks(group, after, block.id, "after");
+      }
+      renderTimeBlockLocation(parent, location) {
+        const wrap = parent.createDiv("ptb-time-block-location");
+        const url = extractFirstUrl(location);
+        if (url) {
+          const link = wrap.createEl("a", {
+            text: location,
+            cls: "ptb-time-block-location-text",
+            attr: { href: url, target: "_blank", rel: "noopener" }
+          });
+          link.onclick = (event) => event.stopPropagation();
+        } else {
+          wrap.createSpan({ text: location, cls: "ptb-time-block-location-text" });
+        }
+        const copyButton = wrap.createEl("button", {
+          cls: "ptb-icon-button ptb-location-copy-button",
+          attr: { type: "button", "aria-label": "Copy location" }
+        });
+        setIcon(copyButton, "copy");
+        copyButton.onclick = async (event) => {
+          event.stopPropagation();
+          try {
+            await navigator.clipboard.writeText(location);
+            new Notice2("Location copied.");
+          } catch (error) {
+            new Notice2("Could not copy location.");
+          }
+        };
       }
       renderTimeBlockLinks(parent, linked, timeBlockId, relation) {
         if (linked.length === 0) return;
