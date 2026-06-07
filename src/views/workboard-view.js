@@ -3,7 +3,7 @@ const { isManualColumn, isSmartColumn } = require("../columns/column-model");
 const { BOARD_VIEW, SIDEBAR_VIEW } = require("../core/constants");
 const { TIME_BLOCK_RELATION_TYPES } = require("../planning/task-time-link-model");
 const { normalizeTag } = require("../utils/text");
-const { area, field } = require("../ui/controls");
+const { area, field, timeSelectField } = require("../ui/controls");
 const { makeDropZone, getHorizontalPlacement, hasDragType } = require("../ui/drag-drop");
 const { renderTaskCard } = require("../ui/task-card");
 const { extractFirstUrl } = require("../utils/urls");
@@ -37,6 +37,7 @@ class BoardView extends ItemView {
     toolbar.createEl("h2", { text: "Task Board" });
     const actions = toolbar.createDiv("ptb-toolbar-actions");
     actions.createEl("button", { text: "Refresh" }).onclick = () => this.plugin.refreshTasks();
+    actions.createEl("button", { text: "Schedule" }).onclick = () => this.plugin.openScheduleBoard();
     actions.createEl("button", { text: "Add Column" }).onclick = async () => {
       await this.plugin.addColumnFromBoard("secondary");
     };
@@ -220,11 +221,11 @@ class BoardView extends ItemView {
     const editor = parent.createDiv("ptb-time-block-editor");
     const date = field(editor, "Date", block ? block.date : this.plugin.getTodayDate(), "date");
     const title = field(editor, "Title", block ? block.title : "");
-    const startTime = field(editor, "Start", block ? block.startTime : this.plugin.config.timelineSettings.startTime, "time");
-    const endTime = field(editor, "End", block ? block.endTime : this.plugin.config.timelineSettings.endTime, "time");
+    const startTime = timeSelectField(editor, "Start", block ? block.startTime : this.plugin.config.timelineSettings.startTime);
+    const endTime = timeSelectField(editor, "End", block ? block.endTime : this.plugin.config.timelineSettings.endTime, { allow24: true });
     const clampEndTime = () => {
-      if (startTime.value && endTime.value && endTime.value < startTime.value) {
-        endTime.value = startTime.value;
+      if (startTime.value && endTime.value && timeToMinutes(endTime.value) <= timeToMinutes(startTime.value)) {
+        endTime.value = nextEndTime(startTime.value);
       }
     };
     startTime.addEventListener("input", clampEndTime);
@@ -490,3 +491,16 @@ class BoardView extends ItemView {
 module.exports = {
   BoardView
 };
+
+function timeToMinutes(time) {
+  if (time === "24:00") return 24 * 60;
+  const match = String(time || "").match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!match) return 0;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function nextEndTime(startTime) {
+  const total = Math.min(24 * 60, timeToMinutes(startTime) + 15);
+  const pad = (number) => String(number).padStart(2, "0");
+  return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+}

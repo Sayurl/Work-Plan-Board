@@ -8,6 +8,7 @@ var __commonJS = (cb, mod) => function __require() {
 var require_constants = __commonJS({
   "src/core/constants.js"(exports2, module2) {
     var BOARD_VIEW2 = "project-task-board-view";
+    var SCHEDULE_VIEW2 = "work-plan-schedule-view";
     var SIDEBAR_VIEW2 = "project-task-board-sidebar";
     var CATEGORY_COLUMNS = [
       { id: "high-priority", name: "High Priority", type: "manual", tag: "#high-priority", group: "primary" },
@@ -27,6 +28,7 @@ var require_constants = __commonJS({
     };
     module2.exports = {
       BOARD_VIEW: BOARD_VIEW2,
+      SCHEDULE_VIEW: SCHEDULE_VIEW2,
       SIDEBAR_VIEW: SIDEBAR_VIEW2,
       CATEGORY_COLUMNS,
       META_KEYS
@@ -63,7 +65,8 @@ var require_defaults = __commonJS({
       timelineSettings: {
         startTime: "09:00",
         endTime: "18:00",
-        slotMinutes: 90
+        slotMinutes: 15,
+        slotHeight: 36
       }
     };
     var DEFAULT_DATA = {
@@ -450,7 +453,7 @@ var require_time_block_model = __commonJS({
       return (Array.isArray(blocks) ? blocks : []).map((block, index) => normalizeTimeBlock2(block, usedIds, index));
     }
     function normalizeTimeBlock2(block, usedIds = /* @__PURE__ */ new Set(), index = 0) {
-      const startTime = normalizeTime(block == null ? void 0 : block.startTime, "09:00");
+      const startTime = normalizeStartTime(block == null ? void 0 : block.startTime, "09:00");
       return {
         id: uniqueTimeBlockId(clean2(block == null ? void 0 : block.id) || `time-block-${index + 1}`, usedIds),
         title: clean2(block == null ? void 0 : block.title) || "Untitled block",
@@ -481,15 +484,29 @@ var require_time_block_model = __commonJS({
       const time = clean2(value);
       return /^([01]\d|2[0-3]):[0-5]\d$/.test(time) ? time : fallback;
     }
+    function normalizeStartTime(value, fallback) {
+      const time = normalizeTime(value, fallback);
+      return time === "24:00" ? fallback : time;
+    }
+    function normalizeEndTimeValue(value, fallback) {
+      const time = clean2(value);
+      if (time === "24:00") return time;
+      return normalizeTime(time, fallback);
+    }
     function normalizeEndTime(startTime, value) {
-      const endTime = normalizeTime(value, "10:00");
-      return endTime > startTime ? endTime : addMinutes(startTime, 60);
+      const endTime = normalizeEndTimeValue(value, "10:00");
+      return timeToMinutes(endTime) > timeToMinutes(startTime) ? endTime : addMinutes(startTime, 60);
     }
     function addMinutes(time, minutes) {
       const [hours, mins] = time.split(":").map(Number);
-      const total = Math.min(23 * 60 + 59, hours * 60 + mins + minutes);
+      const total = Math.min(24 * 60, hours * 60 + mins + minutes);
       const pad = (number) => String(number).padStart(2, "0");
       return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+    }
+    function timeToMinutes(time) {
+      if (time === "24:00") return 24 * 60;
+      const [hours, mins] = time.split(":").map(Number);
+      return hours * 60 + mins;
     }
     function uniqueTimeBlockId(baseId, usedIds) {
       let id = baseId;
@@ -728,6 +745,21 @@ var require_setting_tab = __commonJS({
           dropdown.addOption("keep", "Keep in _Tasks.md").addOption("archive", "Move to _Done.md on refresh").addOption("delete", "Delete on refresh").setValue(this.plugin.config.settings.completedTaskPolicy || "keep").onChange(async (value) => {
             this.plugin.config.settings.completedTaskPolicy = value;
             await this.plugin.savePluginData();
+          });
+        });
+        new Setting(containerEl).setName("Timeline slot height").setDesc("Pixel height for each timeline slot. Lower values make the schedule board shorter.").addText((text) => {
+          text.inputEl.type = "number";
+          text.inputEl.min = "24";
+          text.inputEl.max = "140";
+          text.inputEl.step = "1";
+          text.setValue(String(this.plugin.config.timelineSettings.slotHeight || 36));
+          text.inputEl.addEventListener("blur", async () => {
+            const value = Number(text.getValue());
+            if (!Number.isFinite(value)) return;
+            this.plugin.config.timelineSettings.slotHeight = Math.max(24, Math.min(140, Math.round(value)));
+            await this.plugin.savePluginData();
+            this.plugin.renderViews();
+            this.display();
           });
         });
         const columnSetting = new Setting(containerEl).setName("Columns").setDesc("Manage manual columns, smart views, layout, and task migration when deleting columns.");
@@ -1291,6 +1323,67 @@ var require_controls = __commonJS({
       input.addEventListener("input", () => autoResizeTextarea(input));
       return input;
     }
+    function timeSelectField(parent, label, value, config = {}) {
+      const row = parent.createDiv("ptb-form-row");
+      row.createEl("label", { text: label });
+      const wrap = row.createDiv("ptb-time-select");
+      const hourSelect = document.createElement("select");
+      const minuteSelect = document.createElement("select");
+      wrap.appendChild(hourSelect);
+      wrap.createSpan({ text: ":", cls: "ptb-time-select-separator" });
+      wrap.appendChild(minuteSelect);
+      const allow24 = Boolean(config.allow24);
+      const parsed = parseTimeValue(value, allow24);
+      for (let hour = 0; hour <= (allow24 ? 24 : 23); hour += 1) {
+        const option = document.createElement("option");
+        option.text = String(hour).padStart(2, "0");
+        option.value = String(hour);
+        hourSelect.appendChild(option);
+      }
+      for (const minute of ["00", "15", "30", "45"]) {
+        const option = document.createElement("option");
+        option.text = minute;
+        option.value = minute;
+        minuteSelect.appendChild(option);
+      }
+      hourSelect.value = String(parsed.hour);
+      minuteSelect.value = parsed.minute;
+      const syncMinute = () => {
+        if (hourSelect.value === "24") {
+          minuteSelect.value = "00";
+          minuteSelect.disabled = true;
+        } else {
+          minuteSelect.disabled = false;
+        }
+      };
+      syncMinute();
+      hourSelect.addEventListener("change", syncMinute);
+      return {
+        get value() {
+          const hour = String(Number(hourSelect.value)).padStart(2, "0");
+          return `${hour}:${minuteSelect.value}`;
+        },
+        set value(nextValue) {
+          const next = parseTimeValue(nextValue, allow24);
+          hourSelect.value = String(next.hour);
+          minuteSelect.value = next.minute;
+          syncMinute();
+        },
+        addEventListener(type, listener) {
+          hourSelect.addEventListener(type, listener);
+          minuteSelect.addEventListener(type, listener);
+        }
+      };
+    }
+    function parseTimeValue(value, allow24 = false) {
+      const match = String(value || "").match(/^([01]\d|2[0-4]):([0-5]\d)$/);
+      if (!match) return { hour: 9, minute: "00" };
+      const hour = Number(match[1]);
+      const rawMinute = match[2];
+      if (hour === 24) return allow24 ? { hour: 24, minute: "00" } : { hour: 23, minute: "45" };
+      const minute = ["00", "15", "30", "45"].includes(rawMinute) ? rawMinute : "00";
+      return { hour, minute };
+    }
     function autoResizeTextarea(input) {
       input.style.height = "auto";
       const min = input.value.trim() ? 52 : 30;
@@ -1312,6 +1405,8 @@ var require_controls = __commonJS({
     }
     module2.exports = {
       field,
+      timeSelectField,
+      parseTimeValue,
       searchField,
       area,
       autoResizeTextarea,
@@ -1499,7 +1594,7 @@ var require_workboard_view = __commonJS({
     var { BOARD_VIEW: BOARD_VIEW2, SIDEBAR_VIEW: SIDEBAR_VIEW2 } = require_constants();
     var { TIME_BLOCK_RELATION_TYPES } = require_task_time_link_model();
     var { normalizeTag: normalizeTag2 } = require_text();
-    var { area, field } = require_controls();
+    var { area, field, timeSelectField } = require_controls();
     var { makeDropZone, getHorizontalPlacement, hasDragType } = require_drag_drop();
     var { renderTaskCard } = require_task_card();
     var { extractFirstUrl } = require_urls();
@@ -1527,6 +1622,7 @@ var require_workboard_view = __commonJS({
         toolbar.createEl("h2", { text: "Task Board" });
         const actions = toolbar.createDiv("ptb-toolbar-actions");
         actions.createEl("button", { text: "Refresh" }).onclick = () => this.plugin.refreshTasks();
+        actions.createEl("button", { text: "Schedule" }).onclick = () => this.plugin.openScheduleBoard();
         actions.createEl("button", { text: "Add Column" }).onclick = async () => {
           await this.plugin.addColumnFromBoard("secondary");
         };
@@ -1694,11 +1790,11 @@ var require_workboard_view = __commonJS({
         const editor = parent.createDiv("ptb-time-block-editor");
         const date = field(editor, "Date", block ? block.date : this.plugin.getTodayDate(), "date");
         const title = field(editor, "Title", block ? block.title : "");
-        const startTime = field(editor, "Start", block ? block.startTime : this.plugin.config.timelineSettings.startTime, "time");
-        const endTime = field(editor, "End", block ? block.endTime : this.plugin.config.timelineSettings.endTime, "time");
+        const startTime = timeSelectField(editor, "Start", block ? block.startTime : this.plugin.config.timelineSettings.startTime);
+        const endTime = timeSelectField(editor, "End", block ? block.endTime : this.plugin.config.timelineSettings.endTime, { allow24: true });
         const clampEndTime = () => {
-          if (startTime.value && endTime.value && endTime.value < startTime.value) {
-            endTime.value = startTime.value;
+          if (startTime.value && endTime.value && timeToMinutes(endTime.value) <= timeToMinutes(startTime.value)) {
+            endTime.value = nextEndTime(startTime.value);
           }
         };
         startTime.addEventListener("input", clampEndTime);
@@ -1953,6 +2049,452 @@ var require_workboard_view = __commonJS({
     module2.exports = {
       BoardView: BoardView2
     };
+    function timeToMinutes(time) {
+      if (time === "24:00") return 24 * 60;
+      const match = String(time || "").match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+      if (!match) return 0;
+      return Number(match[1]) * 60 + Number(match[2]);
+    }
+    function nextEndTime(startTime) {
+      const total = Math.min(24 * 60, timeToMinutes(startTime) + 15);
+      const pad = (number) => String(number).padStart(2, "0");
+      return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+    }
+  }
+});
+
+// src/planning/timeline-layout.js
+var require_timeline_layout = __commonJS({
+  "src/planning/timeline-layout.js"(exports2, module2) {
+    var MINUTES_PER_DAY = 24 * 60;
+    function buildTimeBlockLayouts(blocks, options = {}) {
+      const range = options.range || getTimelineRange(options.settings, blocks);
+      const slotMinutes = getSlotMinutes(options.settings);
+      const slotHeight = getSlotHeight(options.settings);
+      const measuredHeights = options.measuredHeights || /* @__PURE__ */ new Map();
+      let offset = 0;
+      return blocks.map((block) => {
+        const state = options.getState ? options.getState(block) : {};
+        const start = clamp(timeToMinutes(block.startTime), range.start, range.end);
+        const end = clamp(timeToMinutes(block.endTime), range.start, range.end);
+        const baseTop = (start - range.start) / slotMinutes * slotHeight;
+        const baseHeight = Math.max(slotHeight, (Math.max(end, start + slotMinutes) - start) / slotMinutes * slotHeight);
+        const measurementKey = makeTimelineMeasurementKey(block, state);
+        const measuredHeight = measuredHeights.get(measurementKey) || 0;
+        const height = Math.max(baseHeight, measuredHeight);
+        const extraHeight = Math.max(0, height - baseHeight);
+        const layout = {
+          block,
+          start,
+          end,
+          top: baseTop + offset,
+          height,
+          baseHeight,
+          extraHeight,
+          measurementKey
+        };
+        offset += extraHeight;
+        return layout;
+      });
+    }
+    function makeTimelineMeasurementKey(block, state = {}) {
+      return [
+        block.id,
+        state.isEditing ? "editing" : "viewing",
+        state.isExpanded ? "expanded" : "collapsed",
+        Number(state.linkedCount) || 0,
+        state.hasLinkableTasks ? "linkable" : "full"
+      ].join(":");
+    }
+    function getExpandedOffsetBefore(minute, layouts) {
+      return layouts.filter((layout) => layout.end <= minute).reduce((sum, layout) => sum + layout.extraHeight, 0);
+    }
+    function getTimelineRange(settings, blocks = []) {
+      const configuredStart = timeToMinutes((settings == null ? void 0 : settings.startTime) || "09:00");
+      const configuredEnd = timeToMinutes((settings == null ? void 0 : settings.endTime) || "18:00");
+      const blockStarts = blocks.map((block) => timeToMinutes(block.startTime));
+      const blockEnds = blocks.map((block) => timeToMinutes(block.endTime));
+      const start = Math.max(0, floorToHour(Math.min(configuredStart, ...blockStarts)));
+      const end = Math.min(MINUTES_PER_DAY, ceilToHour(Math.max(configuredEnd, ...blockEnds)));
+      return { start, end: Math.max(end, start + 60) };
+    }
+    function getSlotMinutes(settings) {
+      const value = Number(settings == null ? void 0 : settings.slotMinutes);
+      return Number.isFinite(value) && value >= 5 && value <= 60 ? value : 15;
+    }
+    function getSlotHeight(settings) {
+      const value = Number(settings == null ? void 0 : settings.slotHeight);
+      return Number.isFinite(value) && value >= 24 && value <= 140 ? value : 36;
+    }
+    function timeToMinutes(time) {
+      if (time === "24:00") return MINUTES_PER_DAY;
+      const match = String(time || "").match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+      if (!match) return 0;
+      return Number(match[1]) * 60 + Number(match[2]);
+    }
+    function minutesToTime(minutes) {
+      const total = Math.max(0, Math.min(MINUTES_PER_DAY, minutes));
+      const pad = (number) => String(number).padStart(2, "0");
+      return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+    }
+    function nextEndTime(startTime) {
+      return minutesToTime(Math.min(MINUTES_PER_DAY, timeToMinutes(startTime) + 15));
+    }
+    function floorToHour(minutes) {
+      return Math.floor(minutes / 60) * 60;
+    }
+    function ceilToHour(minutes) {
+      return Math.ceil(minutes / 60) * 60;
+    }
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+    module2.exports = {
+      MINUTES_PER_DAY,
+      buildTimeBlockLayouts,
+      makeTimelineMeasurementKey,
+      getExpandedOffsetBefore,
+      getTimelineRange,
+      getSlotMinutes,
+      getSlotHeight,
+      timeToMinutes,
+      minutesToTime,
+      nextEndTime
+    };
+  }
+});
+
+// src/views/schedule-view.js
+var require_schedule_view = __commonJS({
+  "src/views/schedule-view.js"(exports2, module2) {
+    var { ItemView, Notice: Notice2, setIcon } = require("obsidian");
+    var { SCHEDULE_VIEW: SCHEDULE_VIEW2 } = require_constants();
+    var { TIME_BLOCK_RELATION_TYPES } = require_task_time_link_model();
+    var { buildTimeBlockLayouts, getExpandedOffsetBefore, getSlotHeight, getSlotMinutes, getTimelineRange, minutesToTime, nextEndTime, timeToMinutes } = require_timeline_layout();
+    var { area, field, timeSelectField } = require_controls();
+    var { extractFirstUrl } = require_urls();
+    var ScheduleView2 = class extends ItemView {
+      constructor(leaf, plugin) {
+        super(leaf);
+        this.plugin = plugin;
+        this.selectedDate = plugin.getTodayDate();
+        this.isCreatingTimeBlock = false;
+        this.editingTimeBlockId = "";
+        this.expandedBundleIds = /* @__PURE__ */ new Set();
+        this.measuredBundleHeights = /* @__PURE__ */ new Map();
+      }
+      getViewType() {
+        return SCHEDULE_VIEW2;
+      }
+      getDisplayText() {
+        return "Schedule Board";
+      }
+      async onOpen() {
+        await this.plugin.refreshTasks();
+      }
+      render() {
+        const container = this.containerEl.children[1];
+        container.empty();
+        container.addClass("ptb-view");
+        container.addClass("ptb-schedule-view");
+        this.renderToolbar(container);
+        this.renderDayTimeline(container);
+      }
+      renderToolbar(container) {
+        const toolbar = container.createDiv("ptb-toolbar ptb-schedule-toolbar");
+        const title = toolbar.createDiv("ptb-schedule-title");
+        title.createEl("h2", { text: "Schedule Board" });
+        title.createSpan({ text: this.formatDateLabel(this.selectedDate), cls: "ptb-chip" });
+        const actions = toolbar.createDiv("ptb-toolbar-actions");
+        actions.createEl("button", { text: "<" }).onclick = () => this.changeDate(-1);
+        const dateInput = document.createElement("input");
+        dateInput.type = "date";
+        dateInput.value = this.selectedDate;
+        dateInput.onchange = () => {
+          if (!dateInput.value) return;
+          this.selectedDate = dateInput.value;
+          this.cancelEditing();
+          this.render();
+        };
+        actions.appendChild(dateInput);
+        actions.createEl("button", { text: "Today" }).onclick = () => {
+          this.selectedDate = this.plugin.getTodayDate();
+          this.cancelEditing();
+          this.render();
+        };
+        actions.createEl("button", { text: ">" }).onclick = () => this.changeDate(1);
+        actions.createEl("button", { text: "New Block", cls: "mod-cta" }).onclick = () => {
+          this.isCreatingTimeBlock = true;
+          this.editingTimeBlockId = "";
+          this.render();
+        };
+        actions.createEl("button", { text: "Refresh" }).onclick = () => this.plugin.refreshTasks();
+      }
+      renderDayTimeline(container) {
+        const blocks = this.plugin.getTimeBlocksForDate(this.selectedDate);
+        const range = getTimelineRange(this.plugin.config.timelineSettings, blocks);
+        const slotMinutes = getSlotMinutes(this.plugin.config.timelineSettings);
+        const slotHeight = getSlotHeight(this.plugin.config.timelineSettings);
+        const totalMinutes = Math.max(slotMinutes, range.end - range.start);
+        const baseTimelineHeight = Math.ceil(totalMinutes / slotMinutes) * slotHeight;
+        const layouts = buildTimeBlockLayouts(blocks, {
+          range,
+          settings: this.plugin.config.timelineSettings,
+          measuredHeights: this.measuredBundleHeights,
+          getState: (block) => ({
+            isEditing: this.editingTimeBlockId === block.id,
+            isExpanded: this.editingTimeBlockId !== block.id && this.expandedBundleIds.has(block.id),
+            linkedCount: this.plugin.getLinkedTasksForTimeBlock(block.id).length,
+            hasLinkableTasks: this.hasLinkableTasks(block)
+          })
+        });
+        const timelineHeight = baseTimelineHeight + layouts.reduce((sum, layout) => sum + layout.extraHeight, 0);
+        if (this.isCreatingTimeBlock) {
+          this.renderTimeBlockEditor(container, null);
+        }
+        const timeline = container.createDiv("ptb-day-timeline");
+        timeline.style.setProperty("--ptb-day-timeline-height", `${timelineHeight}px`);
+        const axis = timeline.createDiv("ptb-day-axis");
+        const canvas = timeline.createDiv("ptb-day-canvas");
+        canvas.style.height = `${timelineHeight}px`;
+        this.renderTimeGrid(axis, canvas, range, slotMinutes, slotHeight, layouts);
+        if (blocks.length === 0 && !this.isCreatingTimeBlock) {
+          canvas.createDiv({ text: "No blocks for this day.", cls: "ptb-empty ptb-day-empty" });
+          return;
+        }
+        for (const block of blocks) {
+          this.renderTimeBlockBundle(canvas, layouts.find((layout) => layout.block.id === block.id));
+        }
+      }
+      renderTimeGrid(axis, canvas, range, slotMinutes, slotHeight, layouts) {
+        for (let minute = range.start; minute <= range.end; minute += slotMinutes) {
+          const top = (minute - range.start) / slotMinutes * slotHeight + getExpandedOffsetBefore(minute, layouts);
+          const line = canvas.createDiv("ptb-day-grid-line");
+          line.style.top = `${top}px`;
+          if (minute % 60 === 0) {
+            const label = axis.createDiv("ptb-day-time-label");
+            label.style.top = `${top}px`;
+            label.setText(minutesToTime(minute));
+            line.addClass("is-hour");
+          }
+        }
+      }
+      renderTimeBlockBundle(parent, layout) {
+        if (!layout) return;
+        const { block } = layout;
+        const linked = this.plugin.getLinkedTasksForTimeBlock(block.id);
+        const byRelation = relationGroups(linked);
+        const isEditing = this.editingTimeBlockId === block.id;
+        const isExpanded = !isEditing && this.expandedBundleIds.has(block.id);
+        const bundle = parent.createDiv("ptb-time-block-bundle");
+        bundle.style.top = `${layout.top}px`;
+        bundle.style.height = `${layout.height}px`;
+        const card = bundle.createDiv("ptb-time-block ptb-schedule-block");
+        card.toggleClass("is-expanded", isExpanded);
+        card.toggleClass("is-editing", isEditing);
+        card.style.height = `${layout.height}px`;
+        const topRow = card.createDiv("ptb-time-block-top");
+        topRow.createSpan({ text: `${block.startTime}-${block.endTime}`, cls: "ptb-time-block-time" });
+        topRow.createEl("strong", { text: block.title });
+        const actions = topRow.createDiv("ptb-time-block-actions");
+        actions.createEl("button", { text: "Edit" }).onclick = () => {
+          this.isCreatingTimeBlock = false;
+          this.editingTimeBlockId = block.id;
+          this.render();
+        };
+        actions.createEl("button", { text: "Delete", cls: "mod-warning" }).onclick = async () => {
+          await this.plugin.deleteTimeBlock(block.id);
+        };
+        if (block.location || block.notes) {
+          const meta = card.createDiv("ptb-time-block-meta");
+          if (block.location) this.renderTimeBlockLocation(meta, block.location);
+          if (block.notes) meta.createSpan({ text: block.notes, cls: "ptb-chip" });
+        }
+        if (isEditing) {
+          this.renderEditExpander(card, block);
+        } else {
+          this.renderTaskExpander(card, block, byRelation, linked.length, isExpanded);
+        }
+        this.measureTimeBlockCard(card, layout);
+      }
+      renderTimeBlockLocation(parent, location) {
+        const wrap = parent.createDiv("ptb-time-block-location");
+        const url = extractFirstUrl(location);
+        if (url) {
+          const link = wrap.createEl("a", {
+            text: location,
+            cls: "ptb-time-block-location-text",
+            attr: { href: url, target: "_blank", rel: "noopener" }
+          });
+          link.onclick = (event) => event.stopPropagation();
+        } else {
+          wrap.createSpan({ text: location, cls: "ptb-time-block-location-text" });
+        }
+        const copyButton = wrap.createEl("button", {
+          cls: "ptb-icon-button ptb-location-copy-button",
+          attr: { type: "button", "aria-label": "Copy location" }
+        });
+        setIcon(copyButton, "copy");
+        copyButton.onclick = async (event) => {
+          event.stopPropagation();
+          try {
+            await navigator.clipboard.writeText(location);
+            new Notice2("Location copied.");
+          } catch (error) {
+            new Notice2("Could not copy location.");
+          }
+        };
+      }
+      renderBundleLinks(parent, linked, timeBlockId, relation) {
+        if (linked.length === 0) return;
+        const list = parent.createDiv(`ptb-time-block-links ptb-time-block-links-${relation}`);
+        for (const { link, task } of linked) {
+          const row = list.createDiv("ptb-time-block-link");
+          row.createSpan({ text: link.relation, cls: "ptb-chip" });
+          row.createSpan({ text: task.title });
+          row.createEl("button", { text: "Unlink" }).onclick = async () => {
+            await this.plugin.unlinkTaskFromTimeBlock(task.id, timeBlockId);
+          };
+        }
+      }
+      renderEditExpander(parent, block) {
+        const expander = parent.createDiv("ptb-time-block-edit-expander");
+        const header = expander.createDiv("ptb-time-block-task-toggle ptb-time-block-edit-label");
+        header.createSpan({ text: "\u25BE", cls: "ptb-expander-chevron" });
+        header.createSpan({ text: "Edit" });
+        this.renderTimeBlockEditor(expander, block);
+      }
+      renderTaskExpander(parent, block, byRelation, linkedCount, isExpanded) {
+        const expander = parent.createDiv("ptb-time-block-task-expander");
+        const toggle = expander.createEl("button", {
+          cls: "ptb-time-block-task-toggle",
+          attr: { type: "button", "aria-expanded": String(isExpanded) }
+        });
+        toggle.createSpan({ text: isExpanded ? "\u25BE" : "\u25B8", cls: "ptb-expander-chevron" });
+        toggle.createSpan({ text: `Linked tasks (${linkedCount})` });
+        toggle.onclick = () => {
+          if (isExpanded) this.expandedBundleIds.delete(block.id);
+          else this.expandedBundleIds.add(block.id);
+          this.render();
+        };
+        if (!isExpanded) return;
+        const body = expander.createDiv("ptb-time-block-task-body");
+        this.renderBundleLinks(body, byRelation.before, block.id, "before");
+        this.renderBundleLinks(body, byRelation.inside, block.id, "inside");
+        this.renderBundleLinks(body, byRelation.related, block.id, "related");
+        this.renderBundleLinks(body, byRelation.after, block.id, "after");
+        this.renderTimeBlockLinker(body, block);
+      }
+      renderTimeBlockLinker(parent, block) {
+        const taskOptions = this.plugin.getTaskOptions().filter((task) => !this.plugin.getTaskTimeLinks(block.id).some((link) => link.taskId === task.id));
+        if (taskOptions.length === 0) return;
+        const row = parent.createDiv("ptb-time-block-linker");
+        const taskSelect = document.createElement("select");
+        for (const task of taskOptions) {
+          const option = document.createElement("option");
+          option.value = task.id;
+          option.text = task.name;
+          taskSelect.appendChild(option);
+        }
+        row.appendChild(taskSelect);
+        const relationSelect = document.createElement("select");
+        for (const relation of TIME_BLOCK_RELATION_TYPES) {
+          const option = document.createElement("option");
+          option.value = relation;
+          option.text = relation;
+          relationSelect.appendChild(option);
+        }
+        relationSelect.value = "inside";
+        row.appendChild(relationSelect);
+        row.createEl("button", { text: "Link" }).onclick = async () => {
+          await this.plugin.linkTaskToTimeBlock(taskSelect.value, block.id, relationSelect.value);
+        };
+      }
+      hasLinkableTasks(block) {
+        return this.plugin.getTaskOptions().some((task) => !this.plugin.getTaskTimeLinks(block.id).some((link) => link.taskId === task.id));
+      }
+      measureTimeBlockCard(card, layout) {
+        requestAnimationFrame(() => {
+          if (!card.isConnected) return;
+          const measuredHeight = Math.ceil(card.scrollHeight);
+          const previous = this.measuredBundleHeights.get(layout.measurementKey) || 0;
+          if (Math.abs(measuredHeight - previous) <= 1) return;
+          this.measuredBundleHeights.set(layout.measurementKey, measuredHeight);
+          this.render();
+        });
+      }
+      renderTimeBlockEditor(parent, block) {
+        const editor = parent.createDiv("ptb-time-block-editor ptb-schedule-editor");
+        const date = field(editor, "Date", block ? block.date : this.selectedDate, "date");
+        const title = field(editor, "Title", block ? block.title : "");
+        const startTime = timeSelectField(editor, "Start", block ? block.startTime : this.plugin.config.timelineSettings.startTime);
+        const endTime = timeSelectField(editor, "End", block ? block.endTime : this.plugin.config.timelineSettings.endTime, { allow24: true });
+        const clampEndTime = () => {
+          if (startTime.value && endTime.value && timeToMinutes(endTime.value) <= timeToMinutes(startTime.value)) {
+            endTime.value = nextEndTime(startTime.value);
+          }
+        };
+        startTime.addEventListener("input", clampEndTime);
+        startTime.addEventListener("change", clampEndTime);
+        endTime.addEventListener("change", clampEndTime);
+        const location = field(editor, "Location", block ? block.location : "");
+        const notes = area(editor, "Notes", block ? block.notes : "");
+        const actions = editor.createDiv("ptb-time-block-editor-actions");
+        actions.createEl("button", { text: "Save", cls: "mod-cta" }).onclick = async () => {
+          const input = {
+            date: date.value,
+            title: title.value,
+            startTime: startTime.value,
+            endTime: endTime.value,
+            location: location.value,
+            notes: notes.value
+          };
+          this.cancelEditing();
+          this.selectedDate = input.date || this.selectedDate;
+          if (block) await this.plugin.updateTimeBlock(block.id, input);
+          else await this.plugin.createTimeBlock(input);
+        };
+        actions.createEl("button", { text: "Cancel" }).onclick = () => {
+          this.cancelEditing();
+          this.render();
+        };
+      }
+      changeDate(days) {
+        this.selectedDate = addDays(this.selectedDate, days);
+        this.cancelEditing();
+        this.render();
+      }
+      cancelEditing() {
+        this.isCreatingTimeBlock = false;
+        this.editingTimeBlockId = "";
+      }
+      formatDateLabel(date) {
+        const parsed = parseLocalDate(date);
+        return parsed.toLocaleDateString(void 0, { weekday: "short", year: "numeric", month: "short", day: "numeric" });
+      }
+    };
+    function relationGroups(linked) {
+      return {
+        before: linked.filter((item) => item.link.relation === "before"),
+        inside: linked.filter((item) => item.link.relation === "inside"),
+        after: linked.filter((item) => item.link.relation === "after"),
+        related: linked.filter((item) => item.link.relation === "related")
+      };
+    }
+    function addDays(date, days) {
+      const parsed = parseLocalDate(date);
+      parsed.setDate(parsed.getDate() + days);
+      const pad = (number) => String(number).padStart(2, "0");
+      return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
+    }
+    function parseLocalDate(date) {
+      const match = String(date || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!match) return /* @__PURE__ */ new Date();
+      return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    }
+    module2.exports = {
+      ScheduleView: ScheduleView2
+    };
   }
 });
 
@@ -2186,7 +2728,7 @@ var require_sidebar_view = __commonJS({
 
 // src/main.js
 var { Notice, Plugin, TFile, TFolder } = require("obsidian");
-var { BOARD_VIEW, SIDEBAR_VIEW } = require_constants();
+var { BOARD_VIEW, SCHEDULE_VIEW, SIDEBAR_VIEW } = require_constants();
 var { DEFAULT_CONFIG } = require_defaults();
 var { loadConfig, saveConfig } = require_config();
 var { hydrateDashboard, normalizeData, syncConfigDataFromDashboard } = require_data();
@@ -2199,6 +2741,7 @@ var { TaskBoardSettingTab } = require_setting_tab();
 var { appendTask, processCompletedTasks, reconcileInvalidTaskCategories, scanTasks, writeTask } = require_task_repository();
 var { addTaskToToday, removeTaskFromToday, reorderTaskList: reorderTaskIds } = require_today_service();
 var { BoardView } = require_workboard_view();
+var { ScheduleView } = require_schedule_view();
 var { SidebarView } = require_sidebar_view();
 var { clean, makeColumnId, makeTaskId, normalizeTag } = require_text();
 var { getProjectRoot, normalizeSourceInput, parseWikiTarget } = require_source_links();
@@ -2216,12 +2759,18 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     this.refreshPromise = null;
     await this.savePluginData();
     this.registerView(BOARD_VIEW, (leaf) => new BoardView(leaf, this));
+    this.registerView(SCHEDULE_VIEW, (leaf) => new ScheduleView(leaf, this));
     this.registerView(SIDEBAR_VIEW, (leaf) => new SidebarView(leaf, this));
     this.addRibbonIcon("layout-dashboard", "Open project task board", () => this.openBoard());
     this.addCommand({
       id: "open-project-task-board",
       name: "Open project task board",
       callback: () => this.openBoard()
+    });
+    this.addCommand({
+      id: "open-work-plan-schedule-board",
+      name: "Open schedule board",
+      callback: () => this.openScheduleBoard()
     });
     this.addCommand({
       id: "open-project-task-sidebar",
@@ -2235,6 +2784,7 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
   }
   async onunload() {
     this.app.workspace.detachLeavesOfType(BOARD_VIEW);
+    this.app.workspace.detachLeavesOfType(SCHEDULE_VIEW);
     this.app.workspace.detachLeavesOfType(SIDEBAR_VIEW);
   }
   get dashboard() {
@@ -2253,6 +2803,14 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
       await leaf.setViewState({ type: BOARD_VIEW, active: true });
     }
     await this.openSidebar();
+    this.app.workspace.revealLeaf(leaf);
+  }
+  async openScheduleBoard() {
+    let leaf = this.app.workspace.getLeavesOfType(SCHEDULE_VIEW)[0];
+    if (!leaf) {
+      leaf = this.app.workspace.getLeaf(true);
+      await leaf.setViewState({ type: SCHEDULE_VIEW, active: true });
+    }
     this.app.workspace.revealLeaf(leaf);
   }
   async openSidebar() {
@@ -2285,6 +2843,9 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
   }
   renderViews() {
     for (const leaf of this.app.workspace.getLeavesOfType(BOARD_VIEW)) {
+      leaf.view.render();
+    }
+    for (const leaf of this.app.workspace.getLeavesOfType(SCHEDULE_VIEW)) {
       leaf.view.render();
     }
     for (const leaf of this.app.workspace.getLeavesOfType(SIDEBAR_VIEW)) {
@@ -2322,6 +2883,9 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
   }
   getTodayTimeBlocks() {
     return getTimeBlocksForDate(this.dashboard.timeBlocks, this.getTodayDate());
+  }
+  getTimeBlocksForDate(date) {
+    return getTimeBlocksForDate(this.dashboard.timeBlocks, date || this.getTodayDate());
   }
   getTimeBlock(timeBlockId) {
     return (this.dashboard.timeBlocks || []).find((block) => block.id === timeBlockId);

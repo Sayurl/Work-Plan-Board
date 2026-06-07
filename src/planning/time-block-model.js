@@ -18,7 +18,7 @@ function normalizeTimeBlocks(blocks) {
 }
 
 function normalizeTimeBlock(block, usedIds = new Set(), index = 0) {
-  const startTime = normalizeTime(block?.startTime, "09:00");
+  const startTime = normalizeStartTime(block?.startTime, "09:00");
   return {
     id: uniqueTimeBlockId(clean(block?.id) || `time-block-${index + 1}`, usedIds),
     title: clean(block?.title) || "Untitled block",
@@ -56,16 +56,33 @@ function normalizeTime(value, fallback) {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(time) ? time : fallback;
 }
 
+function normalizeStartTime(value, fallback) {
+  const time = normalizeTime(value, fallback);
+  return time === "24:00" ? fallback : time;
+}
+
+function normalizeEndTimeValue(value, fallback) {
+  const time = clean(value);
+  if (time === "24:00") return time;
+  return normalizeTime(time, fallback);
+}
+
 function normalizeEndTime(startTime, value) {
-  const endTime = normalizeTime(value, "10:00");
-  return endTime > startTime ? endTime : addMinutes(startTime, 60);
+  const endTime = normalizeEndTimeValue(value, "10:00");
+  return timeToMinutes(endTime) > timeToMinutes(startTime) ? endTime : addMinutes(startTime, 60);
 }
 
 function addMinutes(time, minutes) {
   const [hours, mins] = time.split(":").map(Number);
-  const total = Math.min(23 * 60 + 59, hours * 60 + mins + minutes);
+  const total = Math.min(24 * 60, hours * 60 + mins + minutes);
   const pad = (number) => String(number).padStart(2, "0");
   return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+}
+
+function timeToMinutes(time) {
+  if (time === "24:00") return 24 * 60;
+  const [hours, mins] = time.split(":").map(Number);
+  return hours * 60 + mins;
 }
 
 function uniqueTimeBlockId(baseId, usedIds) {

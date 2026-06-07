@@ -1,5 +1,5 @@
 const { Notice, Plugin, TFile, TFolder } = require("obsidian");
-const { BOARD_VIEW, SIDEBAR_VIEW } = require("./core/constants");
+const { BOARD_VIEW, SCHEDULE_VIEW, SIDEBAR_VIEW } = require("./core/constants");
 const { DEFAULT_CONFIG } = require("./core/defaults");
 const { loadConfig, saveConfig } = require("./core/config");
 const { hydrateDashboard, normalizeData, syncConfigDataFromDashboard } = require("./core/data");
@@ -12,6 +12,7 @@ const { TaskBoardSettingTab } = require("./settings/setting-tab");
 const { appendTask, processCompletedTasks, reconcileInvalidTaskCategories, scanTasks, writeTask } = require("./tasks/task-repository");
 const { addTaskToToday, removeTaskFromToday, reorderTaskList: reorderTaskIds } = require("./today/today-service");
 const { BoardView } = require("./views/workboard-view");
+const { ScheduleView } = require("./views/schedule-view");
 const { SidebarView } = require("./views/sidebar-view");
 const { clean, makeColumnId, makeTaskId, normalizeTag } = require("./utils/text");
 const { getProjectRoot, normalizeSourceInput, parseWikiTarget } = require("./utils/source-links");
@@ -32,6 +33,7 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
     await this.savePluginData();
 
     this.registerView(BOARD_VIEW, (leaf) => new BoardView(leaf, this));
+    this.registerView(SCHEDULE_VIEW, (leaf) => new ScheduleView(leaf, this));
     this.registerView(SIDEBAR_VIEW, (leaf) => new SidebarView(leaf, this));
 
     this.addRibbonIcon("layout-dashboard", "Open project task board", () => this.openBoard());
@@ -39,6 +41,11 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
       id: "open-project-task-board",
       name: "Open project task board",
       callback: () => this.openBoard()
+    });
+    this.addCommand({
+      id: "open-work-plan-schedule-board",
+      name: "Open schedule board",
+      callback: () => this.openScheduleBoard()
     });
     this.addCommand({
       id: "open-project-task-sidebar",
@@ -54,6 +61,7 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
 
   async onunload() {
     this.app.workspace.detachLeavesOfType(BOARD_VIEW);
+    this.app.workspace.detachLeavesOfType(SCHEDULE_VIEW);
     this.app.workspace.detachLeavesOfType(SIDEBAR_VIEW);
   }
 
@@ -75,6 +83,15 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
       await leaf.setViewState({ type: BOARD_VIEW, active: true });
     }
     await this.openSidebar();
+    this.app.workspace.revealLeaf(leaf);
+  }
+
+  async openScheduleBoard() {
+    let leaf = this.app.workspace.getLeavesOfType(SCHEDULE_VIEW)[0];
+    if (!leaf) {
+      leaf = this.app.workspace.getLeaf(true);
+      await leaf.setViewState({ type: SCHEDULE_VIEW, active: true });
+    }
     this.app.workspace.revealLeaf(leaf);
   }
 
@@ -110,6 +127,9 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
 
   renderViews() {
     for (const leaf of this.app.workspace.getLeavesOfType(BOARD_VIEW)) {
+      leaf.view.render();
+    }
+    for (const leaf of this.app.workspace.getLeavesOfType(SCHEDULE_VIEW)) {
       leaf.view.render();
     }
     for (const leaf of this.app.workspace.getLeavesOfType(SIDEBAR_VIEW)) {
@@ -155,6 +175,10 @@ module.exports = class ProjectTaskBoardPlugin extends Plugin {
 
   getTodayTimeBlocks() {
     return getTimeBlocksForDate(this.dashboard.timeBlocks, this.getTodayDate());
+  }
+
+  getTimeBlocksForDate(date) {
+    return getTimeBlocksForDate(this.dashboard.timeBlocks, date || this.getTodayDate());
   }
 
   getTimeBlock(timeBlockId) {

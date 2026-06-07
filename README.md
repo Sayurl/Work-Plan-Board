@@ -38,6 +38,10 @@ Time block locations can contain regular text or a web meeting URL. URLs are sho
 
 Task comments are rendered as Markdown in task details.
 
+## Schedule Board
+
+The schedule board is a separate Obsidian view opened from the command palette or the task board toolbar. It shows a selected day as a vertical timeline, using 15-minute slots and rendering each time block together with its linked tasks.
+
 ## Sidebar
 
 The task sidebar provides quick access to refresh, column focus, new task creation, and actions for the selected task.

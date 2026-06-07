@@ -1,4 +1,5 @@
 const BOARD_VIEW = "project-task-board-view";
+const SCHEDULE_VIEW = "work-plan-schedule-view";
 const SIDEBAR_VIEW = "project-task-board-sidebar";
 
 const CATEGORY_COLUMNS = [
@@ -21,6 +22,7 @@ const META_KEYS = {
 
 module.exports = {
   BOARD_VIEW,
+  SCHEDULE_VIEW,
   SIDEBAR_VIEW,
   CATEGORY_COLUMNS,
   META_KEYS

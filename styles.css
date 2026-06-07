@@ -32,9 +32,171 @@
 .ptb-toolbar h2,
 .ptb-column-header h3,
 .ptb-sidebar-header h3,
+.ptb-schedule-title h2,
 .ptb-timeline-title h4,
 .ptb-subheading {
   margin: 0;
+}
+
+.ptb-schedule-view {
+  overflow-x: hidden;
+}
+
+.ptb-schedule-title {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ptb-schedule-toolbar input[type="date"] {
+  min-height: 28px;
+}
+
+.ptb-schedule-editor {
+  margin-bottom: 12px;
+}
+
+.ptb-day-timeline {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 58px minmax(0, 1fr);
+  min-height: var(--ptb-day-timeline-height);
+}
+
+.ptb-day-axis,
+.ptb-day-canvas {
+  min-height: var(--ptb-day-timeline-height);
+  position: relative;
+}
+
+.ptb-day-axis {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ptb-day-time-label {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+
+.ptb-day-canvas {
+  border-left: 1px solid var(--background-modifier-border);
+  overflow: visible;
+}
+
+.ptb-day-grid-line {
+  border-top: 1px solid var(--background-modifier-border);
+  left: 0;
+  opacity: 0.45;
+  position: absolute;
+  right: 0;
+}
+
+.ptb-day-grid-line.is-hour {
+  opacity: 0.9;
+}
+
+.ptb-day-empty {
+  margin: 12px;
+}
+
+.ptb-time-block-bundle {
+  left: 10px;
+  position: absolute;
+  right: 8px;
+}
+
+.ptb-schedule-block {
+  box-sizing: border-box;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+  height: 100%;
+  overflow: hidden;
+}
+
+.ptb-schedule-block.is-expanded {
+  overflow: visible;
+}
+
+.ptb-schedule-block.is-editing {
+  border-color: var(--interactive-accent);
+  overflow: visible;
+}
+
+.ptb-schedule-block .ptb-schedule-editor {
+  background: var(--background-primary);
+  border: 0;
+  border-top: 1px solid var(--background-modifier-border);
+  border-radius: 0;
+  margin: 4px 0 0;
+  padding: 8px 0 0;
+}
+
+.ptb-time-block-task-expander {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.ptb-time-block-task-toggle {
+  align-items: center;
+  align-self: flex-start;
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  display: inline-flex;
+  font-size: 11px;
+  gap: 4px;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+}
+
+.ptb-time-block-task-toggle:hover {
+  color: var(--text-normal);
+}
+
+.ptb-time-block-edit-label {
+  cursor: default;
+}
+
+.ptb-time-block-edit-label:hover {
+  color: var(--text-muted);
+}
+
+.ptb-expander-chevron {
+  display: inline-block;
+  font-size: 12px;
+  line-height: 1;
+  width: 12px;
+}
+
+.ptb-time-block-task-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ptb-time-block-bundle .ptb-time-block-links-before,
+.ptb-time-block-bundle .ptb-time-block-links-after {
+  margin-left: 8px;
+  margin-right: 8px;
+}
+
+@media (max-width: 760px) {
+  .ptb-day-timeline {
+    grid-template-columns: 46px minmax(0, 1fr);
+  }
+
+  .ptb-time-block-bundle {
+    left: 7px;
+    right: 4px;
+  }
 }
 
 .ptb-board-section {
@@ -659,6 +821,24 @@ a.ptb-time-block-location-text:hover {
 .ptb-form-row textarea {
   min-width: 0;
   width: 100%;
+}
+
+.ptb-time-select {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+  max-width: 156px;
+}
+
+.ptb-time-select select {
+  flex: 0 0 68px;
+  width: 68px;
+}
+
+.ptb-time-select-separator {
+  color: var(--text-muted);
+  flex: 0 0 auto;
+  font-weight: 600;
 }
 
 .ptb-search-field {

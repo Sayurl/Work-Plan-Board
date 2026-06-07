@@ -28,6 +28,25 @@ class TaskBoardSettingTab extends PluginSettingTab {
           });
       });
 
+    new Setting(containerEl)
+      .setName("Timeline slot height")
+      .setDesc("Pixel height for each timeline slot. Lower values make the schedule board shorter.")
+      .addText((text) => {
+        text.inputEl.type = "number";
+        text.inputEl.min = "24";
+        text.inputEl.max = "140";
+        text.inputEl.step = "1";
+        text.setValue(String(this.plugin.config.timelineSettings.slotHeight || 36));
+        text.inputEl.addEventListener("blur", async () => {
+          const value = Number(text.getValue());
+          if (!Number.isFinite(value)) return;
+          this.plugin.config.timelineSettings.slotHeight = Math.max(24, Math.min(140, Math.round(value)));
+          await this.plugin.savePluginData();
+          this.plugin.renderViews();
+          this.display();
+        });
+      });
+
     const columnSetting = new Setting(containerEl)
       .setName("Columns")
       .setDesc("Manage manual columns, smart views, layout, and task migration when deleting columns.");

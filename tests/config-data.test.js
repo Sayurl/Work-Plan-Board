@@ -81,6 +81,24 @@ test("normalizes default deadline as a smart column", () => {
   assert.deepEqual(dashboard.columns.find((column) => column.id === "deadline").taskIds, []);
 });
 
+test("keeps timeline settings in config", () => {
+  const config = normalizeConfig({
+    timelineSettings: {
+      startTime: "07:00",
+      endTime: "22:00",
+      slotMinutes: 15,
+      slotHeight: 48
+    }
+  });
+
+  assert.deepEqual(config.timelineSettings, {
+    startTime: "07:00",
+    endTime: "22:00",
+    slotMinutes: 15,
+    slotHeight: 48
+  });
+});
+
 test("reserves legacy deadline tag for the smart deadline column", () => {
   const config = normalizeConfig({
     dashboards: [

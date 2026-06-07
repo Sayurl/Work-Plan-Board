@@ -27,7 +27,8 @@ const DEFAULT_CONFIG = {
   timelineSettings: {
     startTime: "09:00",
     endTime: "18:00",
-    slotMinutes: 90
+    slotMinutes: 15,
+    slotHeight: 36
   }
 };
 

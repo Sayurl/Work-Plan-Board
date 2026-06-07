@@ -68,6 +68,72 @@ function area(parent, label, value) {
   return input;
 }
 
+function timeSelectField(parent, label, value, config = {}) {
+  const row = parent.createDiv("ptb-form-row");
+  row.createEl("label", { text: label });
+  const wrap = row.createDiv("ptb-time-select");
+  const hourSelect = document.createElement("select");
+  const minuteSelect = document.createElement("select");
+  wrap.appendChild(hourSelect);
+  wrap.createSpan({ text: ":", cls: "ptb-time-select-separator" });
+  wrap.appendChild(minuteSelect);
+
+  const allow24 = Boolean(config.allow24);
+  const parsed = parseTimeValue(value, allow24);
+  for (let hour = 0; hour <= (allow24 ? 24 : 23); hour += 1) {
+    const option = document.createElement("option");
+    option.text = String(hour).padStart(2, "0");
+    option.value = String(hour);
+    hourSelect.appendChild(option);
+  }
+  for (const minute of ["00", "15", "30", "45"]) {
+    const option = document.createElement("option");
+    option.text = minute;
+    option.value = minute;
+    minuteSelect.appendChild(option);
+  }
+
+  hourSelect.value = String(parsed.hour);
+  minuteSelect.value = parsed.minute;
+  const syncMinute = () => {
+    if (hourSelect.value === "24") {
+      minuteSelect.value = "00";
+      minuteSelect.disabled = true;
+    } else {
+      minuteSelect.disabled = false;
+    }
+  };
+  syncMinute();
+  hourSelect.addEventListener("change", syncMinute);
+
+  return {
+    get value() {
+      const hour = String(Number(hourSelect.value)).padStart(2, "0");
+      return `${hour}:${minuteSelect.value}`;
+    },
+    set value(nextValue) {
+      const next = parseTimeValue(nextValue, allow24);
+      hourSelect.value = String(next.hour);
+      minuteSelect.value = next.minute;
+      syncMinute();
+    },
+    addEventListener(type, listener) {
+      hourSelect.addEventListener(type, listener);
+      minuteSelect.addEventListener(type, listener);
+    }
+  };
+}
+
+function parseTimeValue(value, allow24 = false) {
+  const match = String(value || "").match(/^([01]\d|2[0-4]):([0-5]\d)$/);
+  if (!match) return { hour: 9, minute: "00" };
+  const hour = Number(match[1]);
+  const rawMinute = match[2];
+  if (hour === 24) return allow24 ? { hour: 24, minute: "00" } : { hour: 23, minute: "45" };
+  const minute = ["00", "15", "30", "45"].includes(rawMinute) ? rawMinute : "00";
+  return { hour, minute };
+}
+
 function autoResizeTextarea(input) {
   input.style.height = "auto";
   const min = input.value.trim() ? 52 : 30;
@@ -91,6 +157,8 @@ function selectField(parent, label, value, columns) {
 
 module.exports = {
   field,
+  timeSelectField,
+  parseTimeValue,
   searchField,
   area,
   autoResizeTextarea,
