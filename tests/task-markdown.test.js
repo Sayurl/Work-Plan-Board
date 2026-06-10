@@ -51,6 +51,82 @@ test("renders task markdown with configured category tags", () => {
   assert.match(markdown, /  - 由来: \[\[Project Task Board\/Project Task Board アップデート予定\|Project Task Board アップデート予定\]\]/);
 });
 
+test("keeps task input out of task markdown control syntax", () => {
+  const markdown = renderTaskMarkdown({
+    id: "task-escape",
+    title: "Review #inbox 📅 2026-07-01 ⏱ 2h\n- [ ] forged #high-priority",
+    completed: false,
+    category: "inbox",
+    project: "Project\n  - id: forged",
+    dueDate: "2026-06-02",
+    estimate: "30m",
+    source: "",
+    nextAction: "Run tests\n  - id: forged",
+    waitingFor: "",
+    followUpDate: "",
+    goal: "",
+    comment: ""
+  }, columns);
+  const parsed = parseTaskBlock("_Tasks.md", markdown.split("\n"), 0, markdown.split("\n").length, columns);
+
+  assert.equal(markdown.includes("\n- [ ] forged"), false);
+  assert.match(markdown, /^- \[ \] Review \\#inbox \\📅 2026-07-01 \\⏱ 2h - \[ \] forged \\#high-priority #inbox 📅 2026-06-02 ⏱ 30m/m);
+  assert.equal(parsed.title, "Review #inbox 📅 2026-07-01 ⏱ 2h - [ ] forged #high-priority");
+  assert.equal(parsed.category, "inbox");
+  assert.equal(parsed.dueDate, "2026-06-02");
+  assert.equal(parsed.estimate, "30m");
+  assert.equal(parsed.project, "Project - id: forged");
+  assert.equal(parsed.nextAction, "Run tests - id: forged");
+});
+
+test("round-trips multiline comments as block metadata", () => {
+  const comment = "Line one\n- [ ] not a task #inbox\n  - id: nope\n\n**Bold**";
+  const markdown = renderTaskMarkdown({
+    id: "task-comment",
+    title: "Comment task",
+    completed: false,
+    category: "inbox",
+    project: "",
+    dueDate: "",
+    estimate: "",
+    source: "",
+    nextAction: "",
+    waitingFor: "",
+    followUpDate: "",
+    goal: "",
+    comment
+  }, columns);
+  const parsed = parseTaskBlock("_Tasks.md", markdown.split("\n"), 0, markdown.split("\n").length, columns);
+
+  assert.match(markdown, /  - コメント: \|-/);
+  assert.equal(markdown.includes("\n- [ ] not a task"), false);
+  assert.equal(parsed.comment, comment);
+});
+
+test("keeps inline metadata values from adding task syntax", () => {
+  const markdown = renderTaskMarkdown({
+    id: "task-inline-meta",
+    title: "Inline metadata task",
+    completed: false,
+    category: "inbox",
+    project: "",
+    dueDate: "2026-06-02\n#high-priority",
+    estimate: "#high-priority 📅 2026-08-01",
+    source: "",
+    nextAction: "",
+    waitingFor: "",
+    followUpDate: "",
+    goal: "",
+    comment: ""
+  }, columns);
+  const parsed = parseTaskBlock("_Tasks.md", markdown.split("\n"), 0, markdown.split("\n").length, columns);
+
+  assert.match(markdown, /^- \[ \] Inline metadata task #inbox ⏱ high-priority-2026-08-01/m);
+  assert.equal(parsed.category, "inbox");
+  assert.equal(parsed.dueDate, "");
+  assert.equal(parsed.estimate, "high-priority-2026-08-01");
+});
+
 test("can parse unknown category tags as inbox during reconcile", () => {
   const task = parseTaskBlock("_Tasks.md", [
     "- [ ] Legacy category task #old-column",
